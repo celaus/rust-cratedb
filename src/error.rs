@@ -9,7 +9,7 @@ pub struct CrateError {
 }
 
 impl CrateError {
-    pub fn new (message: String, code: String) -> CrateError {
+    pub fn new  (message: String, code: String) -> CrateError {
         let desc = format!("Error Code {}: {}", &code, &message);
         CrateError {
             message: message,

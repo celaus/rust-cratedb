@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use self::serde_json::Value;
 
 
-
 pub struct RowIterator  {
     rows:  Vec<Value>,
     header: HashMap<String, usize>,
@@ -18,6 +17,9 @@ impl  RowIterator  {
             rows: rows,
             header: header,
         }
+    }
+    pub fn len(&self) -> usize {
+        self.rows.len()
     }
 }
 

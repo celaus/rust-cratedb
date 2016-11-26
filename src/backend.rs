@@ -28,7 +28,6 @@ impl Backend for HTTPBackend {
         let mut buf = String::new();
         try!(response.read_to_string(&mut buf)
             .map_err(|e| BackendError { description: e.description().to_owned() }));
-        println!("result: {}", &buf);
         return Ok(buf);
     }
 }
