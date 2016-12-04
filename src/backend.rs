@@ -20,6 +20,7 @@ impl HTTPBackend {
 
 impl Backend for HTTPBackend {
     fn execute(&self, to: &String, payload: String) -> Result<String, BackendError> {
+        println!("sending {}", payload);
         let client = Client::new();
         let mut response = try!(client.post(to)
             .body(&payload)
