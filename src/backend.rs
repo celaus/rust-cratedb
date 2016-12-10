@@ -5,12 +5,12 @@ use std::io::Read;
 use std::error::Error;
 use error::BackendError;
 
+pub trait Backend {
+    fn execute(&self, to: Option<String>, payload: String) -> Result<String, BackendError>;
+}
 
 pub struct HTTPBackend {}
 
-pub trait Backend {
-    fn execute(&self, to: &String, payload: String) -> Result<String, BackendError>;
-}
 
 impl HTTPBackend {
     pub fn new() -> HTTPBackend {
@@ -19,10 +19,11 @@ impl HTTPBackend {
 }
 
 impl Backend for HTTPBackend {
-    fn execute(&self, to: &String, payload: String) -> Result<String, BackendError> {
+    fn execute(&self, to: Option<String>, payload: String) -> Result<String, BackendError> {
         println!("sending {}", payload);
+        let to = try!(to.ok_or(BackendError { description: "No URL specified".to_owned() }));
         let client = Client::new();
-        let mut response = try!(client.post(to)
+        let mut response = try!(client.post(&to)
             .body(&payload)
             .send()
             .map_err(|e| BackendError { description: e.description().to_owned() }));

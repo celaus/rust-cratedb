@@ -4,7 +4,7 @@ use row::Row;
 use std::collections::HashMap;
 use self::serde_json::Value;
 
-
+#[derive(Debug)]
 pub struct RowIterator  {
     rows:  Vec<Value>,
     header: HashMap<String, usize>,

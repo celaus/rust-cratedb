@@ -1,14 +1,14 @@
 use std::error::Error;
 use std::fmt::{self, Debug};
 
-#[derive(Debug)]
-pub struct CrateError {
+#[derive(Debug, PartialEq)]
+pub struct CrateDBError {
     message: String,
     code: String,
     description: String,
 }
 
-impl CrateError {
+impl CrateDBError {
     pub fn new  (message: String, code: String) -> CrateError {
         let desc = format!("Error Code {}: {}", &code, &message);
         CrateError {
@@ -19,34 +19,33 @@ impl CrateError {
     }
 }
 
-impl fmt::Display for CrateError {
+impl fmt::Display for CrateDBError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         Debug::fmt(self, f)
     }
 }
 
-impl Error for CrateError {
+impl Error for CrateDBError {
     fn description(&self) -> &str {
         &self.description
     }
 }
-
 
 
 #[derive(Debug)]
-pub struct StringError {
+pub struct CrateDBConfigurationError {
     pub description: String,
 }
 
-impl fmt::Display for StringError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        Debug::fmt(&self.description, f)
+impl Error for CrateDBConfigurationError {
+    fn description(&self) -> &str {
+        &self.description
     }
 }
 
-impl Error for StringError {
-    fn description(&self) -> &str {
-        &self.description
+impl fmt::Display for CrateDBConfigurationError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        Debug::fmt(&self.description, f)
     }
 }
 
