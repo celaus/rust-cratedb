@@ -9,20 +9,17 @@ pub mod row;
 mod rowiterator;
 mod backend;
 
-use row::Row;
 use self::serde_json::Value;
 use self::serde_json::Map as JsonMap;
 use self::hyper::Url;
 use error::{CrateDBError, CrateDBConfigurationError};
-use self::erased_serde::{Serialize, Serializer};
+use self::erased_serde::Serialize;
 use rowiterator::RowIterator;
 use std::collections::HashMap;
-use std::error::Error;
 
-use backend::{Backend, HTTPBackend};
+use backend::{Backend, DefaultHTTPBackend};
 
-
-pub type Cluster = DBCluster<HTTPBackend>;
+pub type Cluster = DBCluster<DefaultHTTPBackend>;
 
 pub struct DBCluster<T: Backend + Sized> {
     pub nodes: Vec<Url>,
@@ -33,7 +30,7 @@ pub struct DBCluster<T: Backend + Sized> {
 
 impl<T: Backend + Sized> DBCluster<T> {
     fn choose_node_endpoint(&mut self) -> Option<String> {
-        if (self.nodes.len() > 0) {
+        if self.nodes.len() > 0 {
             self.node_rr += 1;
             self.node_rr = self.node_rr % self.nodes.len();
             let host = self.nodes.get(self.node_rr).unwrap().as_str();
@@ -44,14 +41,32 @@ impl<T: Backend + Sized> DBCluster<T> {
     }
 
     pub fn new(nodes: Vec<Url>) -> Result<Cluster, CrateDBConfigurationError> {
-        if (nodes.len() < 1) {
+        if nodes.len() < 1 {
             Err(CrateDBConfigurationError {
                 description: "Please provide URLs to connect to".to_owned(),
             })
         } else {
             Ok(DBCluster {
                 nodes: nodes,
-                backend: HTTPBackend::new(),
+                backend: DefaultHTTPBackend::new(),
+                node_rr: 0,
+            })
+        }
+
+    }
+
+    pub fn with_proxy(nodes: Vec<Url>,
+                      host: &'static str,
+                      port: u16)
+                      -> Result<Cluster, CrateDBConfigurationError> {
+        if nodes.len() < 1 {
+            Err(CrateDBConfigurationError {
+                description: "Please provide URLs to connect to".to_owned(),
+            })
+        } else {
+            Ok(DBCluster {
+                nodes: nodes,
+                backend: DefaultHTTPBackend::with_proxy(host, port),
                 node_rr: 0,
             })
         }
@@ -69,15 +84,31 @@ impl<T: Backend + Sized> DBCluster<T> {
     /// Creates a cluster from a series of comma-separated urls (addess:port pairs)
     ///
     pub fn from_string(node_str: String) -> Result<Cluster, CrateDBConfigurationError> {
-        let backend = HTTPBackend::new();
+        let backend = DefaultHTTPBackend::new();
         let nodes: Vec<Url> = node_str.split(",").map(|n| Url::parse(n).unwrap()).collect();
-        if (nodes.len() < 1) {
+        if nodes.len() < 1 {
             Err(CrateDBConfigurationError {
                 description: "Please provide URLs to connect to".to_owned(),
             })
         } else {
             Ok(DBCluster::with_custom_backend(nodes, backend))
         }
+    }
+
+    ///
+    /// Executes the query against the backend.
+    ///
+    fn execute(&mut self, sql: &str, bulk: bool, params: Option<Box<Serialize>>) -> String {
+        let url = self.choose_node_endpoint();
+        let json_query = if bulk {
+            self.build_bulk_payload(sql, params.unwrap_or(Box::new("{}")))
+        } else {
+            self.build_payload(sql, params)
+        };
+        return match self.backend.execute(url, json_query) {
+            Ok(r) => r,
+            Err(e) => e.response,
+        };
     }
 
     fn build_bulk_payload(&self, sql: &str, params: Box<Serialize>) -> String {
@@ -103,21 +134,21 @@ impl<T: Backend + Sized> DBCluster<T> {
         return CrateDBError::new(message.to_owned(), format!("{}", code));
     }
 
+    fn invalid_json(&self, body: String) -> CrateDBError {
+        CrateDBError::new(format!("{}: {}", "Invalid JSON was returned".to_owned(), body),
+                          "500".to_owned())
+    }
 
     /// Runs a query. Returns the results and the duration
     pub fn query(&mut self,
                  sql: &str,
                  params: Option<Box<Serialize>>)
                  -> Result<(f64, RowIterator), CrateDBError> {
-        let url = self.choose_node_endpoint();
-        let json_query = self.build_payload(sql, params);
-        let body = try!(self.backend
-            .execute(url, json_query)
-            .map_err(|e| CrateDBError::new(e.description().to_owned(), "404".to_string())));
-        if let Ok(raw) = serde_json::from_str(&body) {
-            let data: Value = raw;
-            println!("response: {}", body);
 
+        let body = self.execute(sql, false, params);
+        if let Ok(raw) = serde_json::from_str(&body) {
+
+            let data: Value = raw;
             return match data.pointer("/cols") {
                 Some(cols_raw) => {
                     let rows = data.pointer("/rows").unwrap().as_array().unwrap();
@@ -137,26 +168,23 @@ impl<T: Backend + Sized> DBCluster<T> {
 
             };
         }
-        return Err(CrateDBError::new("Invalid JSON was returned".to_owned(), "500".to_owned()));
+        return Err(self.invalid_json(body));
     }
+
 
     /// Runs a query. Returns the results and the duration
     pub fn bulk_query(&mut self,
                       sql: &str,
                       params: Box<Serialize>)
                       -> Result<(f64, Vec<i64>), CrateDBError> {
-        let url = self.choose_node_endpoint();
-        let json_query = self.build_bulk_payload(sql, params);
-        let body = try!(self.backend
-            .execute(url, json_query)
-            .map_err(|e| CrateDBError::new(e.description().to_owned(), "404".to_string())));
+
+        let body = self.execute(sql, true, Some(params));
 
         if let Ok(raw) = serde_json::from_str(&body) {
             let data: Value = raw;
-            println!("response: {}", body);
 
             return match data.pointer("/cols") {
-                Some(cols_raw) => {
+                Some(_) => {
                     let bulk_results = data.pointer("/results").unwrap().as_array().unwrap();
                     let rowcounts = bulk_results.into_iter()
                         .map(|v| v.pointer("/rowcount").unwrap().as_i64().unwrap())
@@ -167,7 +195,7 @@ impl<T: Backend + Sized> DBCluster<T> {
                 None => Err(self.crate_error(&data)),
             };
         }
-        return Err(CrateDBError::new("Invalid JSON was returned".to_owned(), "500".to_owned()));
+        return Err(self.invalid_json(body));
     }
 }
 
@@ -175,8 +203,7 @@ impl<T: Backend + Sized> DBCluster<T> {
 mod tests {
 
     use super::Backend;
-    use super::error::{BackendError, CrateDBError, CrateDBConfigurationError};
-    use std::collections::HashMap;
+    use super::error::{BackendError, CrateDBError};
     use super::DBCluster;
     use super::row::{Row, ByIndex};
 
@@ -197,10 +224,10 @@ mod tests {
 
     impl Backend for MockBackend {
         fn execute(&self, to: Option<String>, payload: String) -> Result<String, BackendError> {
-            if (!self.failing) {
+            if !self.failing {
                 return Ok(self.response.clone());
             } else {
-                return Err(BackendError { description: self.response.clone() });
+                return Err(BackendError { response: self.response.clone() });
             }
         }
     }
@@ -259,22 +286,56 @@ mod tests {
 
     #[test]
     fn error_bulk_parameter_query() {
-        let mut cluster = new_cluster("{\"cols\":[\"name\"],\"rows\":[[\"A\"]],\"rowcount\":1,\
-                                       \"duration\":0.206}",
+        let mut cluster = new_cluster("{\"error\":{\"message\":\"ReadOnlyException[Only read \
+                                       operations are allowed on this node]\",\"code\":5000}}",
                                       true);
         let result = cluster.bulk_query("select name from mytable where a = ?",
                                         Box::new(vec!["hello", "world", "lalala"]));
         assert!(result.is_err());
+        let e = result.err().unwrap();
+        let expected = CrateDBError::new("ReadOnlyException[Only read operations are allowed on \
+                                          this node]"
+                                             .to_string(),
+                                         "5000".to_string());
+        assert_eq!(e, expected);
+
     }
 
     #[test]
     fn error_parameter_query() {
-        let mut cluster = new_cluster("{\"error\":{\"message\":\"ReadOnlyException[Only read operations are allowed on this node]\",\"code\":5000}}",
+        let mut cluster = new_cluster("{\"error\":{\"message\":\"ReadOnlyException[Only read \
+                                       operations are allowed on this node]\",\"code\":5000}}",
                                       true);
         let result = cluster.query("create table a(a string, b long)", None);
         assert!(result.is_err());
         let e = result.err().unwrap();
-        let expected = CrateDBError::new("ReadOnlyException[Only read operations are allowed on this node]".to_string(), "5000".to_string());
+        let expected = CrateDBError::new("ReadOnlyException[Only read operations are allowed on \
+                                          this node]"
+                                             .to_string(),
+                                         "5000".to_string());
+        assert_eq!(e, expected);
+    }
+
+    #[test]
+    fn non_json_backend_error() {
+        let mut cluster = new_cluster("this is wrong my friend :{", true);
+
+
+        let result = cluster.query("select * from sys.nodes", None);
+        assert!(result.is_err());
+        let e = result.err().unwrap();
+        let expected = CrateDBError::new("Invalid JSON was returned: this is wrong my friend :{"
+                                             .to_string(),
+                                         "500".to_string());
+        assert_eq!(e, expected);
+
+        // bulk queries:
+        let result = cluster.bulk_query("select * from sys.nodes", Box::new("{}"));
+        assert!(result.is_err());
+        let e = result.err().unwrap();
+        let expected = CrateDBError::new("Invalid JSON was returned: this is wrong my friend :{"
+                                             .to_string(),
+                                         "500".to_string());
         assert_eq!(e, expected);
 
     }

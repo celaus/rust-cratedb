@@ -59,22 +59,37 @@ impl ByIndex for Row {
 
 impl ByColumnName for Row {
     fn as_string(&self, col: &String) -> Option<String> {
-        return None;
+        return match self.columns.get(col) {
+            Some(idx) => ByIndex::as_string(self, *idx),
+            None => None,
+        };
     }
 
     fn as_i64(&self, col: &String) -> Option<i64> {
-        return None;
+        return match self.columns.get(col) {
+            Some(idx) => ByIndex::as_i64(self, *idx),
+            None => None,
+        };
     }
 
     fn as_u64(&self, col: &String) -> Option<u64> {
-        return None;
+        return match self.columns.get(col) {
+            Some(idx) => ByIndex::as_u64(self, *idx),
+            None => None,
+        };
     }
 
     fn as_f64(&self, col: &String) -> Option<f64> {
-        return None;
+        return match self.columns.get(col) {
+            Some(idx) => ByIndex::as_f64(self, *idx),
+            None => None,
+        };
     }
 
     fn as_bool(&self, col: &String) -> Option<bool> {
-        return None;
+        return match self.columns.get(col) {
+            Some(idx) => ByIndex::as_bool(self, *idx),
+            None => None,
+        };
     }
 }

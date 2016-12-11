@@ -9,9 +9,9 @@ pub struct CrateDBError {
 }
 
 impl CrateDBError {
-    pub fn new  (message: String, code: String) -> CrateError {
+    pub fn new  (message: String, code: String) -> CrateDBError {
         let desc = format!("Error Code {}: {}", &code, &message);
-        CrateError {
+        CrateDBError {
             message: message,
             code: code,
             description: desc
@@ -52,17 +52,25 @@ impl fmt::Display for CrateDBConfigurationError {
 
 #[derive(Debug)]
 pub struct BackendError {
-    pub description: String,
+    pub response: String,
+}
+
+impl BackendError {
+    pub fn new(response: String) -> BackendError {
+        BackendError {
+            response: response,
+        }
+    }
 }
 
 impl fmt::Display for BackendError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        Debug::fmt(&self.description, f)
+        Debug::fmt(&self.response, f)
     }
 }
 
 impl Error for BackendError {
     fn description(&self) -> &str {
-        &self.description
+        &self.response
     }
 }
