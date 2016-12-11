@@ -1,9 +1,8 @@
 # A Rust Driver for CrateDB
 
-CrateDB is a distributed SQL database by [Crate.io](https://crate.io), to which
-this driver provides access to.
+[![Build Status](https://travis-ci.org/celaus/rust-cratedb.svg?branch=master)](https://travis-ci.org/celaus/rust-cratedb)
 
-
+CrateDB is a distributed SQL database by [Crate.io](https://crate.io), to which this driver provides access to.
 
 ## Quick Start
 
@@ -14,32 +13,47 @@ use cratedb::Cluster;
 use cratedb::row::ByIndex;
 
 fn main() {
-    let nodes = "https://play.crate.io".to_owned();
+    // default URL for a local CrateDB instance
+    let nodes = "http://localhost:4200/".to_owned();
 
-    let mut c:Cluster = Cluster::from_string(nodes).unwrap();
-    let (t, rows) = c.query("select hostname, name from sys.nodes", None).unwrap();
+    // create a cluster
+    let mut c: Cluster = Cluster::from_string(nodes).unwrap();
+
+    // a simple query
+    let stmt = "select hostname, name from sys.nodes";
+    println!("Running: {}", stmt);
+    let (elapsed, rows) = c.query(stmt, None).unwrap();
+
     for r in rows {
-        println!("hostname: {}, name: {}", r.as_string(0).unwrap(), r.as_string(1).unwrap());
+      // cast and retrieve the values
+      let hostname = r.as_string(0).unwrap();
+      let nodename = r.as_string(1).unwrap();
+        println!("hostname: {}, name: {}", hostname , nodename);
     }
-    let (t, rows)  = c.query("create table a(a string)", None).unwrap();
-    println!("time {}, rows affected: ", t);
+    println!("The query took {} ms", elapsed);
+
+    // DDL statements
+    let (elapsed, rows) = c.query("create table a(a string)", None).unwrap();
+
+    // parameterized DML statements
     let p = Box::new(vec!(1234));
-    let _  = c.query("insert into a(a) values (?)", Some(p));
+    let (elapsed, rows)  = c.query("insert into a(a) values (?)", Some(p)).unwrap();
+
     let bulk = vec!(["a"],["b"],["c"],["d"],["e"],["f"],["g"],["h"],["i"]);
-    let _  = c.bulk_query("insert into a(a) values (?)", Box::new(bulk.clone()));
-    for r in  c.bulk_query("select * from a where a = ?", Box::new(bulk)) {
-        println!("val: lalala");
-    }
 
-    let _ = c.query("refresh table a", None);
-    let (duration, x) = c.query("select * from a", None).unwrap();
-    for r in x {
-        println!("val: {}", r.as_string(0).unwrap());
+    // parameterized bulk DML statements
+    let stmt = "insert into a(a) values (?)";
+    println!("Running: {}", stmt);
+    let (elapsed, results)  = c.bulk_query(stmt, Box::new(bulk.clone())).unwrap();
+    for r in results {
+        println!("Inserted {} rows", r);
     }
-    println!("The query took {} ms", duration);
+    println!("The query took {} ms", elapsed);
 
+    // drop this table
     let _  = c.query("drop table a", None);
 }
+
 ```
 
 # License
