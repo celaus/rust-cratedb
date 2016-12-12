@@ -56,6 +56,24 @@ fn main() {
 
 ```
 
+**Output:**
+```shell
+Running: select hostname, name from sys.nodes
+hostname: x5ff, name: Höllwand
+The query took 1.322622 ms
+Running: insert into a(a) values (?)
+Inserted 1 rows
+Inserted 1 rows
+Inserted 1 rows
+Inserted 1 rows
+Inserted 1 rows
+Inserted 1 rows
+Inserted 1 rows
+Inserted 1 rows
+Inserted 1 rows
+The query took 33.12071 ms
+```
+
 # License
 
 This project is developed under the [Apache 2.0](LICENSE) license.

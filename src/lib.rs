@@ -4,8 +4,9 @@ extern crate hyper;
 extern crate erased_serde;
 extern crate serde_json;
 
-mod error;
+pub mod error;
 pub mod row;
+
 mod rowiterator;
 mod backend;
 
@@ -19,16 +20,28 @@ use std::collections::HashMap;
 
 use backend::{Backend, DefaultHTTPBackend};
 
+
+/// Shortcut to access a CrateDB cluster with the default HTTP-based backend.
 pub type Cluster = DBCluster<DefaultHTTPBackend>;
 
+
+///
+/// A CrateDB cluster
+///
 pub struct DBCluster<T: Backend + Sized> {
+    /// A collection of URLs to the available nodes
     pub nodes: Vec<Url>,
+
+    /// The backend with which the nodes/URLs can be reached
     pub backend: T,
+
+    // Round robin counter
     node_rr: usize,
 }
 
 
 impl<T: Backend + Sized> DBCluster<T> {
+    // Chooses a new node using a round robin strategy
     fn choose_node_endpoint(&mut self) -> Option<String> {
         if self.nodes.len() > 0 {
             self.node_rr += 1;
@@ -40,6 +53,16 @@ impl<T: Backend + Sized> DBCluster<T> {
         }
     }
 
+    ///
+    /// Creates a new HTTP-backed cluster object with the provided URLs.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use cratedb::Cluster;
+    /// use hyper::Url;
+    /// let mut c: Cluster = Cluster::new(vec![Url::parse("http://localhost:4200")]);
+    /// ```
     pub fn new(nodes: Vec<Url>) -> Result<Cluster, CrateDBConfigurationError> {
         if nodes.len() < 1 {
             Err(CrateDBConfigurationError {
@@ -55,6 +78,16 @@ impl<T: Backend + Sized> DBCluster<T> {
 
     }
 
+    ///
+    /// Creates a new HTTP-backed cluster object with the provided URLs.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use cratedb::Cluster;
+    /// use hyper::Url;
+    /// let mut c: Cluster = Cluster::new(vec![Url::parse("http://localhost:4200")]);
+    /// ```
     pub fn with_proxy(nodes: Vec<Url>,
                       host: &'static str,
                       port: u16)
@@ -73,6 +106,10 @@ impl<T: Backend + Sized> DBCluster<T> {
 
     }
 
+    ///
+    /// Creates a new HTTP-backed cluster object with the provided URLs and
+    /// a custom backend.
+    ///
     pub fn with_custom_backend(nodes: Vec<Url>, backend: T) -> DBCluster<T> {
         DBCluster {
             nodes: nodes,
@@ -81,8 +118,19 @@ impl<T: Backend + Sized> DBCluster<T> {
         }
     }
 
+    ///
     /// Creates a cluster from a series of comma-separated urls (addess:port pairs)
     ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use cratedb::Cluster;
+    /// let node1 = "http://localhost:4200/";
+    /// let node2 = "http://play.crate.io/";
+    /// let mut c: Cluster = Cluster::from_string(format!("{},{}", node1, node2)).unwrap();
+    /// assert_eq!(c.nodes.get(0).unwrap().to_string(), node1.to_string());
+    /// assert_eq!(c.nodes.get(1).unwrap().to_string(), node2.to_string());
+    /// ```
     pub fn from_string(node_str: String) -> Result<Cluster, CrateDBConfigurationError> {
         let backend = DefaultHTTPBackend::new();
         let nodes: Vec<Url> = node_str.split(",").map(|n| Url::parse(n).unwrap()).collect();
@@ -95,9 +143,7 @@ impl<T: Backend + Sized> DBCluster<T> {
         }
     }
 
-    ///
-    /// Executes the query against the backend.
-    ///
+    // Executes the query against the backend.
     fn execute(&mut self, sql: &str, bulk: bool, params: Option<Box<Serialize>>) -> String {
         let url = self.choose_node_endpoint();
         let json_query = if bulk {
@@ -139,7 +185,22 @@ impl<T: Backend + Sized> DBCluster<T> {
                           "500".to_owned())
     }
 
+    ///
     /// Runs a query. Returns the results and the duration
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use cratedb::Cluster;
+    /// use cratedb::row::ByIndex;
+    /// let node = "http://play.crate.io".to_string();
+    /// let mut c: Cluster = Cluster::from_string(node).unwrap();
+    /// let (elapsed, rows) = c.query("select hostname from sys.nodes", None).unwrap();
+    ///
+    /// for r in rows {
+    ///  println!("{}", r.as_string(0).unwrap());
+    /// }
+    /// ```
     pub fn query(&mut self,
                  sql: &str,
                  params: Option<Box<Serialize>>)
@@ -173,6 +234,17 @@ impl<T: Backend + Sized> DBCluster<T> {
 
 
     /// Runs a query. Returns the results and the duration
+    /// ```
+    /// use doc::Cluster;
+    /// use doc::row::ByIndex;
+    /// let node = "http://play.crate.io";
+    /// let mut c: Cluster = Cluster::from_string(node).unwrap();
+    /// let (elapsed, rows) = c.query("select hostname from sys.nodes", None).unwrap();
+    ///
+    /// for r in rows {
+    ///  println!(r.as_string(0).unwrap());
+    /// }
+    /// ```
     pub fn bulk_query(&mut self,
                       sql: &str,
                       params: Box<Serialize>)
