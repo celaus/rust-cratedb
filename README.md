@@ -1,6 +1,7 @@
 # A Rust Driver for CrateDB
 
 [![Build Status](https://travis-ci.org/celaus/rust-cratedb.svg?branch=master)](https://travis-ci.org/celaus/rust-cratedb)
+[![Crates.io](https://img.shields.io/crates/v/cratedb.svg)](https://crates.io/crates/cratedb)
 
 CrateDB is a distributed SQL database by [Crate.io](https://crate.io), to which this driver provides access to.
 
