@@ -9,11 +9,13 @@ pub struct CrateDBError {
 }
 
 impl CrateDBError {
-    pub fn new  (message: String, code: String) -> CrateDBError {
-        let desc = format!("Error Code {}: {}", &code, &message);
+    pub fn new<S1, S2>  (message: S1, code: S2) -> CrateDBError where S1: Into<String>, S2: Into<String> {
+        let c = code.into();
+        let m = message.into();
+        let desc = format!("Error [Code {}]: {}", c, m);
         CrateDBError {
-            message: message,
-            code: code,
+            message: m,
+            code: c,
             description: desc
         }
     }
@@ -56,9 +58,9 @@ pub struct BackendError {
 }
 
 impl BackendError {
-    pub fn new(response: String) -> BackendError {
+    pub fn new<S>(response: S) -> BackendError where S: Into<String> {
         BackendError {
-            response: response,
+            response: response.into(),
         }
     }
 }

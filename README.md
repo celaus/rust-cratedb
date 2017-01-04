@@ -15,10 +15,10 @@ use cratedb::row::ByIndex;
 
 fn main() {
     // default URL for a local CrateDB instance
-    let nodes = "http://localhost:4200/".to_owned();
+    let nodes = "http://localhost:4200/";
 
     // create a cluster
-    let mut c: Cluster = Cluster::from_string(nodes).unwrap();
+    let c: Cluster = Cluster::from_string(nodes).unwrap();
 
     // a simple query
     let stmt = "select hostname, name from sys.nodes";

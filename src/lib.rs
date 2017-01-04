@@ -3,6 +3,8 @@
 extern crate hyper;
 extern crate erased_serde;
 extern crate serde_json;
+extern crate rand;
+
 
 pub mod error;
 pub mod row;
@@ -17,6 +19,8 @@ use error::{CrateDBError, CrateDBConfigurationError};
 use self::erased_serde::Serialize;
 use rowiterator::RowIterator;
 use std::collections::HashMap;
+use std::convert::Into;
+use self::rand::random;
 
 use backend::{Backend, DefaultHTTPBackend};
 
@@ -34,20 +38,16 @@ pub struct DBCluster<T: Backend + Sized> {
 
     /// The backend with which the nodes/URLs can be reached
     pub backend: T,
-
-    // Round robin counter
-    node_rr: usize,
 }
 
 
 impl<T: Backend + Sized> DBCluster<T> {
-    // Chooses a new node using a round robin strategy
-    fn choose_node_endpoint(&mut self) -> Option<String> {
+    // Chooses a new node using a random strategy
+    fn choose_node_endpoint(&self) -> Option<String> {
         if self.nodes.len() > 0 {
-            self.node_rr += 1;
-            self.node_rr = self.node_rr % self.nodes.len();
-            let host = self.nodes.get(self.node_rr).unwrap().as_str();
-            return Some(format!("{}{}", host, "_sql".to_owned()));
+            let node = random::<usize>() % self.nodes.len();
+            let host = self.nodes.get(node).unwrap().as_str();
+            return Some(format!("{}{}", host, "_sql"));
         } else {
             return None;
         }
@@ -66,13 +66,12 @@ impl<T: Backend + Sized> DBCluster<T> {
     pub fn new(nodes: Vec<Url>) -> Result<Cluster, CrateDBConfigurationError> {
         if nodes.len() < 1 {
             Err(CrateDBConfigurationError {
-                description: "Please provide URLs to connect to".to_owned(),
+                description: String::from("Please provide URLs to connect to"),
             })
         } else {
             Ok(DBCluster {
                 nodes: nodes,
                 backend: DefaultHTTPBackend::new(),
-                node_rr: 0,
             })
         }
 
@@ -94,13 +93,12 @@ impl<T: Backend + Sized> DBCluster<T> {
                       -> Result<Cluster, CrateDBConfigurationError> {
         if nodes.len() < 1 {
             Err(CrateDBConfigurationError {
-                description: "Please provide URLs to connect to".to_owned(),
+                description: String::from("Please provide URLs to connect to"),
             })
         } else {
             Ok(DBCluster {
                 nodes: nodes,
                 backend: DefaultHTTPBackend::with_proxy(host, port),
-                node_rr: 0,
             })
         }
 
@@ -114,7 +112,6 @@ impl<T: Backend + Sized> DBCluster<T> {
         DBCluster {
             nodes: nodes,
             backend: backend,
-            node_rr: 0,
         }
     }
 
@@ -131,12 +128,14 @@ impl<T: Backend + Sized> DBCluster<T> {
     /// assert_eq!(c.nodes.get(0).unwrap().to_string(), node1.to_string());
     /// assert_eq!(c.nodes.get(1).unwrap().to_string(), node2.to_string());
     /// ```
-    pub fn from_string(node_str: String) -> Result<Cluster, CrateDBConfigurationError> {
+    pub fn from_string<S>(node_str: S) -> Result<Cluster, CrateDBConfigurationError>
+        where S: Into<String>
+    {
         let backend = DefaultHTTPBackend::new();
-        let nodes: Vec<Url> = node_str.split(",").map(|n| Url::parse(n).unwrap()).collect();
+        let nodes: Vec<Url> = node_str.into().split(",").map(|n| Url::parse(n).unwrap()).collect();
         if nodes.len() < 1 {
             Err(CrateDBConfigurationError {
-                description: "Please provide URLs to connect to".to_owned(),
+                description: String::from("Please provide URLs to connect to"),
             })
         } else {
             Ok(DBCluster::with_custom_backend(nodes, backend))
@@ -144,7 +143,9 @@ impl<T: Backend + Sized> DBCluster<T> {
     }
 
     // Executes the query against the backend.
-    fn execute(&mut self, sql: &str, bulk: bool, params: Option<Box<Serialize>>) -> String {
+    fn execute<S>(&self, sql: S, bulk: bool, params: Option<Box<Serialize>>) -> String
+        where S: Into<String>
+    {
         let url = self.choose_node_endpoint();
         let json_query = if bulk {
             self.build_bulk_payload(sql, params.unwrap_or(Box::new("{}")))
@@ -157,19 +158,23 @@ impl<T: Backend + Sized> DBCluster<T> {
         };
     }
 
-    fn build_bulk_payload(&self, sql: &str, params: Box<Serialize>) -> String {
-        let mut map = JsonMap::new();
-        map.insert("stmt".to_string(), Value::String(sql.to_owned()));
-        map.insert("bulk_args".to_string(), serde_json::to_value(params));
+    fn build_bulk_payload<S>(&self, sql: S, params: Box<Serialize>) -> String
+        where S: Into<String>
+    {
+        let mut map: JsonMap<&'static str, Value> = JsonMap::new();
+        map.insert("stmt", Value::String(sql.into()));
+        map.insert("bulk_args", serde_json::to_value(params));
         return serde_json::to_string(&map).unwrap();
 
     }
 
-    fn build_payload(&self, sql: &str, params: Option<Box<Serialize>>) -> String {
-        let mut map = JsonMap::new();
-        map.insert("stmt".to_string(), Value::String(sql.to_owned()));
+    fn build_payload<S>(&self, sql: S, params: Option<Box<Serialize>>) -> String
+        where S: Into<String>
+    {
+        let mut map: JsonMap<&'static str, Value> = JsonMap::new();
+        map.insert("stmt", Value::String(sql.into()));
         if let Some(p) = params {
-            map.insert("args".to_string(), serde_json::to_value(p));
+            map.insert("args", serde_json::to_value(p));
         }
         return serde_json::to_string(&map).unwrap();
     }
@@ -177,12 +182,11 @@ impl<T: Backend + Sized> DBCluster<T> {
     fn crate_error(&self, payload: &Value) -> CrateDBError {
         let message = payload.pointer("/error/message").unwrap().as_str().unwrap();
         let code = payload.pointer("/error/code").unwrap().as_i64().unwrap();
-        return CrateDBError::new(message.to_owned(), format!("{}", code));
+        return CrateDBError::new(message, format!("{}", code));
     }
 
     fn invalid_json(&self, body: String) -> CrateDBError {
-        CrateDBError::new(format!("{}: {}", "Invalid JSON was returned".to_owned(), body),
-                          "500".to_owned())
+        CrateDBError::new(format!("{}: {}", "Invalid JSON was returned", body), "500")
     }
 
     ///
@@ -193,7 +197,7 @@ impl<T: Backend + Sized> DBCluster<T> {
     /// ```
     /// use cratedb::Cluster;
     /// use cratedb::row::ByIndex;
-    /// let node = "http://play.crate.io".to_string();
+    /// let node = "http://play.crate.io";
     /// let mut c: Cluster = Cluster::from_string(node).unwrap();
     /// let (elapsed, rows) = c.query("select hostname from sys.nodes", None).unwrap();
     ///
@@ -201,10 +205,12 @@ impl<T: Backend + Sized> DBCluster<T> {
     ///  println!("{}", r.as_string(0).unwrap());
     /// }
     /// ```
-    pub fn query(&mut self,
-                 sql: &str,
-                 params: Option<Box<Serialize>>)
-                 -> Result<(f64, RowIterator), CrateDBError> {
+    pub fn query<S>(&self,
+                    sql: S,
+                    params: Option<Box<Serialize>>)
+                    -> Result<(f64, RowIterator), CrateDBError>
+        where S: Into<String>
+    {
 
         let body = self.execute(sql, false, params);
         if let Ok(raw) = serde_json::from_str(&body) {
@@ -245,10 +251,12 @@ impl<T: Backend + Sized> DBCluster<T> {
     ///  println!(r.as_string(0).unwrap());
     /// }
     /// ```
-    pub fn bulk_query(&mut self,
-                      sql: &str,
-                      params: Box<Serialize>)
-                      -> Result<(f64, Vec<i64>), CrateDBError> {
+    pub fn bulk_query<S>(&self,
+                         sql: S,
+                         params: Box<Serialize>)
+                         -> Result<(f64, Vec<i64>), CrateDBError>
+        where S: Into<String>
+    {
 
         let body = self.execute(sql, true, Some(params));
 
@@ -296,6 +304,7 @@ mod tests {
 
     impl Backend for MockBackend {
         fn execute(&self, to: Option<String>, payload: String) -> Result<String, BackendError> {
+            let _ = (to, payload);
             if !self.failing {
                 return Ok(self.response.clone());
             } else {
@@ -311,9 +320,9 @@ mod tests {
 
     #[test]
     fn parameter_query() {
-        let mut cluster = new_cluster("{\"cols\":[\"name\"],\"rows\":[[\"A\"]],\"rowcount\":1,\
+        let cluster = new_cluster("{\"cols\":[\"name\"],\"rows\":[[\"A\"]],\"rowcount\":1,\
                                        \"duration\":0.206}",
-                                      false);
+                                  false);
         let result = cluster.query("select name from mytable where a = ?",
                                    Some(Box::new("hello")));
         assert!(result.is_ok());
@@ -326,9 +335,9 @@ mod tests {
 
     #[test]
     fn no_parameter_query() {
-        let mut cluster = new_cluster("{\"cols\":[\"name\"],\"rows\":[[\"A\"]],\"rowcount\":1,\
+        let cluster = new_cluster("{\"cols\":[\"name\"],\"rows\":[[\"A\"]],\"rowcount\":1,\
                                        \"duration\":0.206}",
-                                      false);
+                                  false);
         let result = cluster.query("select name from mytable where a = 'hello'", None);
         assert!(result.is_ok());
         let (t, result) = result.unwrap();
@@ -340,11 +349,11 @@ mod tests {
 
     #[test]
     fn bulk_parameter_query() {
-        let mut cluster = new_cluster("{\"cols\": [], \"results\":[{\"rowcount\": 1}, \
+        let cluster = new_cluster("{\"cols\": [], \"results\":[{\"rowcount\": 1}, \
                                        {\"rowcount\": 2}, {\"rowcount\": 3}],
                                        \
                                        \"duration\":0.206}",
-                                      false);
+                                  false);
         let result = cluster.bulk_query("update mytable set v = 1 where a = ?",
                                         Box::new(vec!["hello", "world", "lalala"]));
         assert!(result.is_ok());
@@ -358,56 +367,52 @@ mod tests {
 
     #[test]
     fn error_bulk_parameter_query() {
-        let mut cluster = new_cluster("{\"error\":{\"message\":\"ReadOnlyException[Only read \
+        let cluster = new_cluster("{\"error\":{\"message\":\"ReadOnlyException[Only read \
                                        operations are allowed on this node]\",\"code\":5000}}",
-                                      true);
+                                  true);
         let result = cluster.bulk_query("select name from mytable where a = ?",
                                         Box::new(vec!["hello", "world", "lalala"]));
         assert!(result.is_err());
         let e = result.err().unwrap();
         let expected = CrateDBError::new("ReadOnlyException[Only read operations are allowed on \
-                                          this node]"
-                                             .to_string(),
-                                         "5000".to_string());
+                                          this node]",
+                                         "5000");
         assert_eq!(e, expected);
 
     }
 
     #[test]
     fn error_parameter_query() {
-        let mut cluster = new_cluster("{\"error\":{\"message\":\"ReadOnlyException[Only read \
+        let cluster = new_cluster("{\"error\":{\"message\":\"ReadOnlyException[Only read \
                                        operations are allowed on this node]\",\"code\":5000}}",
-                                      true);
+                                  true);
         let result = cluster.query("create table a(a string, b long)", None);
         assert!(result.is_err());
         let e = result.err().unwrap();
         let expected = CrateDBError::new("ReadOnlyException[Only read operations are allowed on \
-                                          this node]"
-                                             .to_string(),
-                                         "5000".to_string());
+                                          this node]",
+                                         "5000");
         assert_eq!(e, expected);
     }
 
     #[test]
     fn non_json_backend_error() {
-        let mut cluster = new_cluster("this is wrong my friend :{", true);
+        let cluster = new_cluster("this is wrong my friend :{", true);
 
 
         let result = cluster.query("select * from sys.nodes", None);
         assert!(result.is_err());
         let e = result.err().unwrap();
-        let expected = CrateDBError::new("Invalid JSON was returned: this is wrong my friend :{"
-                                             .to_string(),
-                                         "500".to_string());
+        let expected = CrateDBError::new("Invalid JSON was returned: this is wrong my friend :{",
+                                         "500");
         assert_eq!(e, expected);
 
         // bulk queries:
         let result = cluster.bulk_query("select * from sys.nodes", Box::new("{}"));
         assert!(result.is_err());
         let e = result.err().unwrap();
-        let expected = CrateDBError::new("Invalid JSON was returned: this is wrong my friend :{"
-                                             .to_string(),
-                                         "500".to_string());
+        let expected = CrateDBError::new("Invalid JSON was returned: this is wrong my friend :{",
+                                         "500");
         assert_eq!(e, expected);
 
     }
