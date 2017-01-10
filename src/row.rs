@@ -1,9 +1,25 @@
+// Copyright 2016 Claus Matzinger
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+
 extern crate serde_json;
 extern crate serde;
 
 use serde_json::Value;
 use std::collections::HashMap;
 use self::serde::de::Deserialize;
+use std::rc::Rc;
 
 ///
 /// A row in a result set of a CrateDB query. Provides
@@ -11,7 +27,7 @@ use self::serde::de::Deserialize;
 ///
 pub struct Row {
     wrapped: Vec<Value>,
-    columns: HashMap<String, usize>,
+    columns: Rc<HashMap<String, usize>>,
 }
 
 ///
@@ -39,7 +55,7 @@ pub trait ByColumnName {
 }
 
 impl Row {
-    pub fn new(wrapped: Vec<Value>, headers: HashMap<String, usize>) -> Row {
+    pub fn new(wrapped: Vec<Value>, headers: Rc<HashMap<String, usize>>) -> Row {
         Row {
             wrapped: wrapped,
             columns: headers,
@@ -130,6 +146,7 @@ mod tests {
     extern crate serde_json;
     use super::{Row, ByColumnName, ByIndex};
     use std::collections::HashMap;
+    use std::rc::Rc;
 
     fn get_row() -> Row {
         let mut v_obj = HashMap::new();
@@ -153,7 +170,7 @@ mod tests {
                      serde_json::to_value(vec![1, 2, 3, 4]),
                      serde_json::to_value(vec![vec![1, 1], vec![2, 2]])];
 
-        return Row::new(v, headers);
+        return Row::new(v, Rc::new(headers));
     }
 
     #[test]
