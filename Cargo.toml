@@ -1,6 +1,6 @@
 [package]
 name = "cratedb"
-version = "0.1.2"
+version = "0.2.0"
 authors = ["Claus Matzinger <claus.matzinger+kb@gmail.com>"]
 description = "CrateDB driver for Rust."
 repository = "https://github.com/celaus/rust-cratedb"
