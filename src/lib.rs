@@ -13,8 +13,11 @@
 // limitations under the License.
 
 extern crate hyper;
-extern crate erased_serde;
+extern crate serde;
+#[macro_use]
 extern crate serde_json;
+#[macro_use]
+extern crate serde_derive;
 extern crate rand;
 
 
@@ -25,10 +28,9 @@ mod rowiterator;
 mod backend;
 
 use self::serde_json::Value;
-use self::serde_json::Map as JsonMap;
+use self::serde::ser::Serialize;
 use self::hyper::Url;
 use error::{CrateDBError, CrateDBConfigurationError};
-use self::erased_serde::Serialize;
 use rowiterator::RowIterator;
 use std::collections::HashMap;
 use std::convert::Into;
@@ -155,14 +157,29 @@ impl<T: Backend + Sized> DBCluster<T> {
     }
 
     // Executes the query against the backend.
-    fn execute<S>(&self, sql: S, bulk: bool, params: Option<Box<Serialize>>) -> String
-        where S: Into<String>
+    fn execute<SQL, S>(&self, sql: SQL, bulk: bool, params: Option<Box<S>>) -> String
+        where SQL: Into<String>, S: Serialize
     {
         let url = self.choose_node_endpoint();
         let json_query = if bulk {
-            self.build_bulk_payload(sql, params.unwrap_or(Box::new("{}")))
+            json!({
+                "stmt": sql.into(),
+                "bulk_args": serde_json::to_value(params.unwrap()).unwrap()
+                })
+                .to_string()
         } else {
-            self.build_payload(sql, params)
+            if let Some(p) = params {
+                json!({
+                    "stmt": sql.into(),
+                    "args": serde_json::to_value(p).unwrap()
+                    })
+                    .to_string()
+            } else {
+                json!({
+                    "stmt": sql.into()
+                    })
+                    .to_string()
+            }
         };
         return match self.backend.execute(url, json_query) {
             Ok(r) => r,
@@ -170,26 +187,6 @@ impl<T: Backend + Sized> DBCluster<T> {
         };
     }
 
-    fn build_bulk_payload<S>(&self, sql: S, params: Box<Serialize>) -> String
-        where S: Into<String>
-    {
-        let mut map: JsonMap<&'static str, Value> = JsonMap::new();
-        map.insert("stmt", Value::String(sql.into()));
-        map.insert("bulk_args", serde_json::to_value(params));
-        return serde_json::to_string(&map).unwrap();
-
-    }
-
-    fn build_payload<S>(&self, sql: S, params: Option<Box<Serialize>>) -> String
-        where S: Into<String>
-    {
-        let mut map: JsonMap<&'static str, Value> = JsonMap::new();
-        map.insert("stmt", Value::String(sql.into()));
-        if let Some(p) = params {
-            map.insert("args", serde_json::to_value(p));
-        }
-        return serde_json::to_string(&map).unwrap();
-    }
 
     fn crate_error(&self, payload: &Value) -> CrateDBError {
         let message = payload.pointer("/error/message").unwrap().as_str().unwrap();
@@ -206,22 +203,22 @@ impl<T: Backend + Sized> DBCluster<T> {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```rust,ignore
     /// use cratedb::Cluster;
     /// use cratedb::row::ByIndex;
     /// let node = "http://play.crate.io";
     /// let mut c: Cluster = Cluster::from_string(node).unwrap();
-    /// let (elapsed, rows) = c.query("select hostname from sys.nodes", None).unwrap();
+    /// let (elapsed, rows) = c.query::<&'static str, ()>("select hostname from sys.nodes", None).unwrap();
     ///
     /// for r in rows {
     ///  println!("{}", r.as_string(0).unwrap());
     /// }
     /// ```
-    pub fn query<S>(&self,
-                    sql: S,
-                    params: Option<Box<Serialize>>)
+    pub fn query<SQL, S>(&self,
+                    sql: SQL,
+                    params: Option<Box<S>>)
                     -> Result<(f64, RowIterator), CrateDBError>
-        where S: Into<String>
+        where SQL: Into<String>, S: Serialize
     {
 
         let body = self.execute(sql, false, params);
@@ -252,22 +249,22 @@ impl<T: Backend + Sized> DBCluster<T> {
 
 
     /// Runs a query. Returns the results and the duration
-    /// ```
+    /// ```rust, ignore
     /// use doc::Cluster;
     /// use doc::row::ByIndex;
     /// let node = "http://play.crate.io";
     /// let mut c: Cluster = Cluster::from_string(node).unwrap();
-    /// let (elapsed, rows) = c.query("select hostname from sys.nodes", None).unwrap();
+    /// let (elapsed, rows) = c.query::<&'static str, ()>("select hostname from sys.nodes", Box::new("")).unwrap();
     ///
     /// for r in rows {
     ///  println!(r.as_string(0).unwrap());
     /// }
     /// ```
-    pub fn bulk_query<S>(&self,
-                         sql: S,
-                         params: Box<Serialize>)
+    pub fn bulk_query<SQL, S>(&self,
+                         sql: SQL,
+                         params: Box<S>)
                          -> Result<(f64, Vec<i64>), CrateDBError>
-        where S: Into<String>
+        where SQL: Into<String>, S: Serialize
     {
 
         let body = self.execute(sql, true, Some(params));
@@ -330,6 +327,15 @@ mod tests {
         DBCluster::with_custom_backend(vec![], MockBackend::new(response.to_owned(), failing))
     }
 
+
+        #[derive(Serialize)]
+        struct TestObj{
+            a: i32,
+            b: String,
+            c: f64,
+        }
+
+
     #[test]
     fn parameter_query() {
         let cluster = new_cluster("{\"cols\":[\"name\"],\"rows\":[[\"A\"]],\"rowcount\":1,\
@@ -343,6 +349,14 @@ mod tests {
         let rows: Vec<Row> = result.collect();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows.get(0).unwrap().as_string(0).unwrap(), "A".to_owned());
+
+        let result = cluster.query("insert into mytable (v1, v2) values (?, ?)",
+                                        Some(Box::new((1, TestObj {a: 1, b: "asd".to_string(), c:3.14}))));
+        assert!(result.is_ok());
+        let (t, result) = result.unwrap();
+        assert_eq!(t, 0.206f64);
+        assert_eq!(result.len(), 1);
+        assert_eq!(rows.get(0).unwrap().as_string(0).unwrap(), "A".to_owned());
     }
 
     #[test]
@@ -350,7 +364,7 @@ mod tests {
         let cluster = new_cluster("{\"cols\":[\"name\"],\"rows\":[[\"A\"]],\"rowcount\":1,\
                                        \"duration\":0.206}",
                                   false);
-        let result = cluster.query("select name from mytable where a = 'hello'", None);
+        let result = cluster.query::<&'static str, ()>("select name from mytable where a = 'hello'", None);
         assert!(result.is_ok());
         let (t, result) = result.unwrap();
         assert_eq!(t, 0.206f64);
@@ -358,6 +372,8 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows.get(0).unwrap().as_string(0).unwrap(), "A".to_owned());
     }
+
+
 
     #[test]
     fn bulk_parameter_query() {
@@ -398,7 +414,7 @@ mod tests {
         let cluster = new_cluster("{\"error\":{\"message\":\"ReadOnlyException[Only read \
                                        operations are allowed on this node]\",\"code\":5000}}",
                                   true);
-        let result = cluster.query("create table a(a string, b long)", None);
+        let result = cluster.query::<&'static str, ()>("create table a(a string, b long)", None);
         assert!(result.is_err());
         let e = result.err().unwrap();
         let expected = CrateDBError::new("ReadOnlyException[Only read operations are allowed on \
@@ -412,7 +428,7 @@ mod tests {
         let cluster = new_cluster("this is wrong my friend :{", true);
 
 
-        let result = cluster.query("select * from sys.nodes", None);
+        let result = cluster.query::<&'static str, ()>("select * from sys.nodes", None);
         assert!(result.is_err());
         let e = result.err().unwrap();
         let expected = CrateDBError::new("Invalid JSON was returned: this is wrong my friend :{",

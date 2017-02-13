@@ -18,35 +18,36 @@ extern crate serde_json;
 use row::Row;
 use std::collections::HashMap;
 use self::serde_json::Value;
-use std::iter::Map;
 use std::rc::Rc;
-use std::slice::Iter;
 
 #[derive(Debug)]
-pub struct RowIterator<'a>  {
-    rows:  Vec<Value>,
+pub struct RowIterator {
+    rows: Vec<Value>,
     header: Rc<HashMap<String, usize>>,
-    iter: Map<Iter<&'a Value>, Row>
 }
 
-impl  <'a>RowIterator<'a>  {
-    pub fn new(rows: Vec<Value>, header: HashMap<String, usize>) -> RowIterator  {
+impl RowIterator {
+    pub fn new(mut rows: Vec<Value>, header: HashMap<String, usize>) -> RowIterator {
         let headers = Rc::new(header);
+        rows.reverse();
         RowIterator {
-            iter: rows.iter().map(|r| Row::new(r.as_array().unwrap().to_vec(), headers.clone())),
             rows: rows,
             header: headers,
         }
     }
+
     pub fn len(&self) -> usize {
         self.rows.len()
     }
 }
 
-impl  <'a>Iterator for RowIterator<'a>  {
+impl Iterator for RowIterator {
     type Item = Row;
 
     fn next(&mut self) -> Option<Row> {
-        self.iter.next()
+        match self.rows.pop() {
+            Some(i) => Some(Row::new(i.as_array().unwrap().to_vec(), self.header.clone())),
+            _ => None,
+        }
     }
 }

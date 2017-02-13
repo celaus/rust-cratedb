@@ -52,18 +52,22 @@ impl<H: Into<Cow<'static, str>> + Clone> HTTPBackend<H> {
             use_proxy: true,
         }
     }
-}
 
-impl<H: Into<Cow<'static, str>> + Clone> Backend for HTTPBackend<H> {
-    fn execute(&self, to: Option<String>, payload: String) -> Result<String, BackendError> {
-        let to = try!(to.ok_or(BackendError { response: "No URL specified".to_owned() }));
-
-        let client = if self.use_proxy {
+    fn get_client(&self) -> Client {
+        if self.use_proxy {
             Client::with_http_proxy(self.proxy_host.clone(), self.proxy_port)
         } else {
             Client::new()
-        };
+        }
+    }
 
+}
+
+impl<H: Into<Cow<'static, str>> + Clone> Backend for HTTPBackend<H> {
+
+    fn execute(&self, to: Option<String>, payload: String) -> Result<String, BackendError> {
+        let to = try!(to.ok_or(BackendError { response: "No URL specified".to_owned() }));
+        let client = self.get_client();
         let mut response = try!(client.post(&to)
             .body(&payload)
             .send()

@@ -162,13 +162,13 @@ mod tests {
         headers.insert("array_of_arrays".to_owned(), 6usize);
 
 
-        let v = vec![serde_json::to_value("hello"),
-                     serde_json::to_value(1234),
-                     serde_json::to_value(3.141528),
-                     serde_json::to_value(true),
-                     serde_json::to_value(-1234),
-                     serde_json::to_value(vec![1, 2, 3, 4]),
-                     serde_json::to_value(vec![vec![1, 1], vec![2, 2]])];
+        let v = vec![serde_json::to_value("hello").unwrap(),
+                     serde_json::to_value(1234).unwrap(),
+                     serde_json::to_value(3.141528).unwrap(),
+                     serde_json::to_value(true).unwrap(),
+                     serde_json::to_value(-1234).unwrap(),
+                     serde_json::to_value(vec![1, 2, 3, 4]).unwrap(),
+                     serde_json::to_value(vec![vec![1, 1], vec![2, 2]]).unwrap()];
 
         return Row::new(v, Rc::new(headers));
     }
