@@ -39,6 +39,9 @@ use self::rand::random;
 use backend::{Backend, DefaultHTTPBackend};
 
 
+#[derive(Serialize)]
+pub struct Nothing {}
+
 /// Shortcut to access a CrateDB cluster with the default HTTP-based backend.
 pub type Cluster = DBCluster<DefaultHTTPBackend>;
 
@@ -208,7 +211,7 @@ impl<T: Backend + Sized> DBCluster<T> {
     /// use cratedb::row::ByIndex;
     /// let node = "http://play.crate.io";
     /// let mut c: Cluster = Cluster::from_string(node).unwrap();
-    /// let (elapsed, rows) = c.query::<&'static str, ()>("select hostname from sys.nodes", None).unwrap();
+    /// let (elapsed, rows) = c.query("select hostname from sys.nodes", None::<Box<Nothing>>).unwrap();
     ///
     /// for r in rows {
     ///  println!("{}", r.as_string(0).unwrap());
@@ -254,7 +257,7 @@ impl<T: Backend + Sized> DBCluster<T> {
     /// use doc::row::ByIndex;
     /// let node = "http://play.crate.io";
     /// let mut c: Cluster = Cluster::from_string(node).unwrap();
-    /// let (elapsed, rows) = c.query::<&'static str, ()>("select hostname from sys.nodes", Box::new("")).unwrap();
+    /// let (elapsed, rows) = c.query("select hostname from sys.nodes", Box::new("")).unwrap();
     ///
     /// for r in rows {
     ///  println!(r.as_string(0).unwrap());
@@ -290,7 +293,7 @@ impl<T: Backend + Sized> DBCluster<T> {
 
 #[cfg(test)]
 mod tests {
-
+    use super::Nothing;
     use super::Backend;
     use super::error::{BackendError, CrateDBError};
     use super::DBCluster;
@@ -364,7 +367,7 @@ mod tests {
         let cluster = new_cluster("{\"cols\":[\"name\"],\"rows\":[[\"A\"]],\"rowcount\":1,\
                                        \"duration\":0.206}",
                                   false);
-        let result = cluster.query::<&'static str, ()>("select name from mytable where a = 'hello'", None);
+        let result = cluster.query("select name from mytable where a = 'hello'", None::<Box<Nothing>>);
         assert!(result.is_ok());
         let (t, result) = result.unwrap();
         assert_eq!(t, 0.206f64);
@@ -414,7 +417,7 @@ mod tests {
         let cluster = new_cluster("{\"error\":{\"message\":\"ReadOnlyException[Only read \
                                        operations are allowed on this node]\",\"code\":5000}}",
                                   true);
-        let result = cluster.query::<&'static str, ()>("create table a(a string, b long)", None);
+        let result = cluster.query("create table a(a string, b long)", None::<Box<Nothing>>);
         assert!(result.is_err());
         let e = result.err().unwrap();
         let expected = CrateDBError::new("ReadOnlyException[Only read operations are allowed on \
@@ -428,7 +431,7 @@ mod tests {
         let cluster = new_cluster("this is wrong my friend :{", true);
 
 
-        let result = cluster.query::<&'static str, ()>("select * from sys.nodes", None);
+        let result = cluster.query("select * from sys.nodes", None::<Box<Nothing>>);
         assert!(result.is_err());
         let e = result.err().unwrap();
         let expected = CrateDBError::new("Invalid JSON was returned: this is wrong my friend :{",
