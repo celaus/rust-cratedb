@@ -1,3 +1,17 @@
+// Copyright 2016 Claus Matzinger
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 extern crate hyper;
 use self::hyper::Client;
 
@@ -38,18 +52,22 @@ impl<H: Into<Cow<'static, str>> + Clone> HTTPBackend<H> {
             use_proxy: true,
         }
     }
-}
 
-impl<H: Into<Cow<'static, str>> + Clone> Backend for HTTPBackend<H> {
-    fn execute(&self, to: Option<String>, payload: String) -> Result<String, BackendError> {
-        let to = try!(to.ok_or(BackendError { response: "No URL specified".to_owned() }));
-
-        let client = if self.use_proxy {
+    fn get_client(&self) -> Client {
+        if self.use_proxy {
             Client::with_http_proxy(self.proxy_host.clone(), self.proxy_port)
         } else {
             Client::new()
-        };
+        }
+    }
 
+}
+
+impl<H: Into<Cow<'static, str>> + Clone> Backend for HTTPBackend<H> {
+
+    fn execute(&self, to: Option<String>, payload: String) -> Result<String, BackendError> {
+        let to = try!(to.ok_or(BackendError { response: "No URL specified".to_owned() }));
+        let client = self.get_client();
         let mut response = try!(client.post(&to)
             .body(&payload)
             .send()

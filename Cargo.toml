@@ -1,6 +1,6 @@
 [package]
 name = "cratedb"
-version = "0.1.1"
+version = "0.2.0"
 authors = ["Claus Matzinger <claus.matzinger+kb@gmail.com>"]
 description = "CrateDB driver for Rust."
 repository = "https://github.com/celaus/rust-cratedb"
@@ -8,10 +8,8 @@ keywords = ["cratedb", "database", "sql", "crate"]
 license = "Apache-2.0"
 
 [dependencies]
-serde = "^0.8.17"
-serde_derive = "^0.8.17"
-serde_json = "^0.8.3"
-serde_codegen = "^0.8.17"
-erased-serde = "^0.1.3"
-hyper = "^0.9.12"
+serde = "^0.9.6"
+serde_derive = "^0.9.6"
+serde_json = "^0.9.6"
+hyper = "^0.10.4"
 rand = "^0.3"
