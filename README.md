@@ -7,10 +7,14 @@ CrateDB is a distributed SQL database by [Crate.io](https://crate.io), to which 
 
 ## Quick Start
 
+_The `None::<Box<Nothing>>` is required to tell the compiler about the type
+the box would actually have. Nothing is an empty struct 😁 if there's a better
+solution, please open an issue_
+
 ```rust
 extern crate cratedb;
 
-use cratedb::Cluster;
+use cratedb::{Cluster, Nothing};
 use cratedb::row::ByIndex;
 
 fn main() {
@@ -23,7 +27,7 @@ fn main() {
     // a simple query
     let stmt = "select hostname, name from sys.nodes";
     println!("Running: {}", stmt);
-    let (elapsed, rows) = c.query(stmt, None).unwrap();
+    let (elapsed, rows) = c.query(stmt, None::<Box<Nothing>>).unwrap();
 
     for r in rows {
       // cast and retrieve the values
@@ -34,7 +38,7 @@ fn main() {
     println!("The query took {} ms", elapsed);
 
     // DDL statements
-    let (elapsed, rows) = c.query("create table a(a string)", None).unwrap();
+    let (elapsed, rows) = c.query("create table a(a string)", None::<Box<Nothing>>).unwrap();
 
     // parameterized DML statements
     let p = Box::new(vec!(1234));
@@ -52,7 +56,7 @@ fn main() {
     println!("The query took {} ms", elapsed);
 
     // drop this table
-    let _  = c.query("drop table a", None);
+    let _  = c.query("drop table a", None::<Box<Nothing>>);
 }
 
 ```
