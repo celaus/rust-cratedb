@@ -13,7 +13,11 @@
 // limitations under the License.
 
 extern crate hyper;
-use self::hyper::Client;
+extern crate hyper_rustls;
+
+use self::hyper::{Client, Url};
+use self::hyper::net::{HttpConnector, HttpsConnector};
+use self::hyper_rustls::TlsClient;
 
 use std::io::Read;
 use std::error::Error;
@@ -22,6 +26,10 @@ use std::borrow::Cow;
 use std::convert::Into;
 use std::clone::Clone;
 
+enum UrlType {
+    Encryped,
+    Plaintext,
+}
 
 pub type DefaultHTTPBackend = HTTPBackend<&'static str>;
 
@@ -53,22 +61,30 @@ impl<H: Into<Cow<'static, str>> + Clone> HTTPBackend<H> {
         }
     }
 
-    fn get_client(&self) -> Client {
+    fn get_client(&self, u: UrlType) -> Client {
         if self.use_proxy {
             Client::with_http_proxy(self.proxy_host.clone(), self.proxy_port)
         } else {
-            Client::new()
+            match u {
+                UrlType::Encryped => Client::with_connector(HttpConnector {}),
+                UrlType::Plaintext => Client::with_connector(HttpsConnector::new(TlsClient::new())),
+            }
         }
     }
-
 }
 
 impl<H: Into<Cow<'static, str>> + Clone> Backend for HTTPBackend<H> {
-
     fn execute(&self, to: Option<String>, payload: String) -> Result<String, BackendError> {
-        let to = try!(to.ok_or(BackendError { response: "No URL specified".to_owned() }));
-        let client = self.get_client();
-        let mut response = try!(client.post(&to)
+        let to_raw = to.ok_or(BackendError { response: "No URL specified".to_owned() })?;
+        let to = Url::parse(&to_raw).unwrap();
+
+        let client = self.get_client(match to.scheme() {
+            "http" => UrlType::Plaintext,
+            "https" => UrlType::Encryped,
+            _ => return Err(BackendError { response: "Unknown URL scheme".to_string() }),
+        });
+
+        let mut response = try!(client.post(to)
             .body(&payload)
             .send()
             .map_err(|e| BackendError { response: e.description().to_owned() }));

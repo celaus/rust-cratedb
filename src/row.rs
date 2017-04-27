@@ -18,7 +18,7 @@ extern crate serde;
 
 use serde_json::Value;
 use std::collections::HashMap;
-use self::serde::de::Deserialize;
+use self::serde::de::DeserializeOwned;
 use std::rc::Rc;
 
 ///
@@ -39,7 +39,7 @@ pub trait ByIndex {
     fn as_f64(&self, idx: usize) -> Option<f64>;
     fn as_bool(&self, idx: usize) -> Option<bool>;
     fn as_string(&self, idx: usize) -> Option<String>;
-    fn as_array<T: Deserialize>(&self, idx: usize) -> Option<Vec<T>>;
+    fn as_array<T: DeserializeOwned>(&self, idx: usize) -> Option<Vec<T>>;
 }
 
 ///
@@ -51,7 +51,7 @@ pub trait ByColumnName {
     fn as_f64(&self, col: &String) -> Option<f64>;
     fn as_bool(&self, col: &String) -> Option<bool>;
     fn as_string(&self, col: &String) -> Option<String>;
-    fn as_array<T: Deserialize>(&self, col: &String) -> Option<Vec<T>>;
+    fn as_array<T: DeserializeOwned>(&self, col: &String) -> Option<Vec<T>>;
 }
 
 impl Row {
@@ -87,7 +87,7 @@ impl ByIndex for Row {
         return self.wrapped.get(idx).unwrap().as_bool();
     }
 
-    fn as_array<T: Deserialize>(&self, idx: usize) -> Option<Vec<T>> {
+    fn as_array<T: DeserializeOwned>(&self, idx: usize) -> Option<Vec<T>> {
         match self.wrapped.get(idx).unwrap().as_array() {
             Some(v) => {
                 Some(v.into_iter().map(|e| serde_json::from_value(e.clone()).unwrap()).collect())
@@ -134,7 +134,7 @@ impl ByColumnName for Row {
         };
     }
 
-    fn as_array<T: Deserialize>(&self, col: &String) -> Option<Vec<T>> {
+    fn as_array<T: DeserializeOwned>(&self, col: &String) -> Option<Vec<T>> {
         return match self.columns.get(col) {
             Some(idx) => ByIndex::as_array(self, *idx),
             None => None,
