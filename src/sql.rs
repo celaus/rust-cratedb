@@ -115,6 +115,12 @@ impl<T: Backend + Sized> Executor for DBCluster<T> {
     }
 }
 
+fn extract_error(data: &Value) -> CrateDBError {
+    let message = data.pointer("/error/message").unwrap().as_str().unwrap();
+    let code = data.pointer("/error/code").unwrap().as_i64().unwrap().to_string();
+    CrateDBError::new(message, code)
+}
+
 impl<T: Backend + Sized> QueryRunner for DBCluster<T> {
     fn query<SQL, S>(&self,
                      sql: SQL,
@@ -143,11 +149,7 @@ impl<T: Backend + Sized> QueryRunner for DBCluster<T> {
                     let duration = data.pointer("/duration").unwrap().as_f64().unwrap();
                     Ok((duration, RowIterator::new(rows.clone(), cols)))
                 }
-                None => {
-                    let message = data.pointer("/error/message").unwrap().as_str().unwrap();
-                    let code = data.pointer("/error/code").unwrap().as_str().unwrap();
-                    Err(CrateDBError::new(message, code))
-                }
+                None => Err(extract_error(&data)),
 
             };
         }
@@ -175,11 +177,7 @@ impl<T: Backend + Sized> QueryRunner for DBCluster<T> {
                     let duration = data.pointer("/duration").unwrap().as_f64().unwrap();
                     Ok((duration, rowcounts))
                 }
-                None => {
-                    let message = data.pointer("/error/message").unwrap().as_str().unwrap();
-                    let code = data.pointer("/error/code").unwrap().as_str().unwrap();
-                    Err(CrateDBError::new(message, code))
-                }
+                None => Err(extract_error(&data)),
             };
         }
         return Err(CrateDBError::new(format!("{}: {}", "Invalid JSON was returned", body), "500"));

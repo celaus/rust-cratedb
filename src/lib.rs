@@ -186,6 +186,7 @@ mod tests {
         let result = cluster.bulk_query("select name from mytable where a = ?",
                                         Box::new(vec!["hello", "world", "lalala"]));
         assert!(result.is_err());
+        println!("here");
         let e = result.err().unwrap();
         let expected = CrateDBError::new("ReadOnlyException[Only read operations are allowed on \
                                           this node]",

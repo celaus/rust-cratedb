@@ -94,9 +94,9 @@ impl<H: Into<Cow<'static, str>> + Clone> HTTPBackend<H> {
 
 impl<H: Into<Cow<'static, str>> + Clone> Backend for HTTPBackend<H> {
     fn execute(&self, to: Option<String>, payload: String) -> Result<String, BackendError> {
+
         let to_raw = to.ok_or(BackendError { response: "No URL specified".to_owned() })?;
         let to = Url::parse(&to_raw).unwrap();
-
         let client = self.get_client(match to.scheme() {
             "http" => UrlType::Plaintext,
             "https" => UrlType::Encryped,
