@@ -1,10 +1,10 @@
 [package]
 name = "cratedb"
-version = "0.3.0"
+version = "1.0.0"
 authors = ["Claus Matzinger <claus.matzinger+kb@gmail.com>"]
 description = "CrateDB driver for Rust."
 repository = "https://github.com/celaus/rust-cratedb"
-keywords = ["cratedb", "database", "sql", "crate"]
+keywords = ["cratedb", "database", "sql", "crate", "blob"]
 license = "Apache-2.0"
 
 [dependencies]
@@ -14,3 +14,4 @@ serde_json = "^1.0"
 hyper = "^0.10.9"
 hyper-rustls = "^0.3.3"
 rand = "^0.3"
+ring = "*"

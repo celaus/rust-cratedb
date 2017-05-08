@@ -15,6 +15,7 @@
 
 use std::error::Error;
 use std::fmt::{self, Debug};
+use std::io;
 
 #[derive(Debug, PartialEq)]
 pub struct CrateDBError {
@@ -24,17 +25,21 @@ pub struct CrateDBError {
 }
 
 impl CrateDBError {
-    pub fn new<S1, S2>  (message: S1, code: S2) -> CrateDBError where S1: Into<String>, S2: Into<String> {
+    pub fn new<S1, S2>(message: S1, code: S2) -> CrateDBError
+        where S1: Into<String>,
+              S2: Into<String>
+    {
         let c = code.into();
         let m = message.into();
         let desc = format!("Error [Code {}]: {}", c, m);
         CrateDBError {
             message: m,
             code: c,
-            description: desc
+            description: desc,
         }
     }
 }
+
 
 impl fmt::Display for CrateDBError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -73,10 +78,10 @@ pub struct BackendError {
 }
 
 impl BackendError {
-    pub fn new<S>(response: S) -> BackendError where S: Into<String> {
-        BackendError {
-            response: response.into(),
-        }
+    pub fn new<S>(response: S) -> BackendError
+        where S: Into<String>
+    {
+        BackendError { response: response.into() }
     }
 }
 
@@ -90,4 +95,11 @@ impl Error for BackendError {
     fn description(&self) -> &str {
         &self.response
     }
+}
+
+#[derive(Debug)]
+pub enum BlobError {
+    Crate(CrateDBError),
+    Io(io::Error),
+    Backend(BackendError),
 }

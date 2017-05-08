@@ -18,6 +18,7 @@ extern crate hyper_rustls;
 use self::hyper::{Client, Url};
 use self::hyper::net::{HttpConnector, HttpsConnector};
 use self::hyper_rustls::TlsClient;
+use self::hyper::client::Body;
 
 use std::io::Read;
 use std::error::Error;
@@ -25,6 +26,7 @@ use error::BackendError;
 use std::borrow::Cow;
 use std::convert::Into;
 use std::clone::Clone;
+
 
 enum UrlType {
     Encryped,
@@ -35,6 +37,23 @@ pub type DefaultHTTPBackend = HTTPBackend<&'static str>;
 
 pub trait Backend {
     fn execute(&self, to: Option<String>, payload: String) -> Result<String, BackendError>;
+    fn upload_blob(&self,
+                   to: Option<String>,
+                   bucket: &str,
+                   sha1: &[u8],
+                   f: &mut Read)
+                   -> Result<(), BackendError>;
+
+    fn delete_blob(&self,
+                   to: Option<String>,
+                   bucket: &str,
+                   sha1: &[u8])
+                   -> Result<(), BackendError>;
+    fn fetch_blob(&self,
+                  to: Option<String>,
+                  bucket: &str,
+                  sha1: &[u8])
+                  -> Result<Box<Read>, BackendError>;
 }
 
 pub struct HTTPBackend<H: Into<Cow<'static, str>> + Clone> {
@@ -92,6 +111,85 @@ impl<H: Into<Cow<'static, str>> + Clone> Backend for HTTPBackend<H> {
         let mut buf = String::new();
         try!(response.read_to_string(&mut buf)
             .map_err(|e| BackendError { response: e.description().to_owned() }));
-        return Ok(buf);
+        Ok(buf)
     }
+
+    fn upload_blob(&self,
+                   to: Option<String>,
+                   bucket: &str,
+                   sha1: &[u8],
+                   mut f: &mut Read)
+                   -> Result<(), BackendError> {
+        let to = make_blob_url(to, bucket, sha1).expect("Invalid blob url");
+        let client = self.get_client(match to.scheme() {
+            "http" => UrlType::Plaintext,
+            "https" => UrlType::Encryped,
+            _ => return Err(BackendError { response: "Unknown URL scheme".to_string() }),
+        });
+
+        let _ = try!(client.put(to)
+            .body(Body::ChunkedBody(&mut f))
+            .send()
+            .map_err(|e| BackendError { response: e.description().to_owned() }));
+        Ok(())
+    }
+
+
+    fn delete_blob(&self,
+                   to: Option<String>,
+                   bucket: &str,
+                   sha1: &[u8])
+                   -> Result<(), BackendError> {
+        let to = make_blob_url(to, bucket, sha1).expect("Invalid blob url");
+        let client = self.get_client(match to.scheme() {
+            "http" => UrlType::Plaintext,
+            "https" => UrlType::Encryped,
+            _ => return Err(BackendError { response: "Unknown URL scheme".to_string() }),
+        });
+
+        let _ = try!(client.delete(to)
+            .send()
+            .map_err(|e| BackendError { response: e.description().to_owned() }));
+
+        Ok(())
+    }
+
+    fn fetch_blob(&self,
+                  to: Option<String>,
+                  bucket: &str,
+                  sha1: &[u8])
+                  -> Result<Box<Read>, BackendError> {
+
+        let to = make_blob_url(to, bucket, sha1).expect("Invalid blob url");
+        let client = self.get_client(match to.scheme() {
+            "http" => UrlType::Plaintext,
+            "https" => UrlType::Encryped,
+            _ => return Err(BackendError { response: "Unknown URL scheme".to_string() }),
+        });
+
+        let response = try!(client.get(to)
+            .send()
+            .map_err(|e| BackendError { response: e.description().to_owned() }));
+
+        Ok(Box::new(response))
+    }
+}
+
+fn make_blob_url(to: Option<String>, bucket: &str, sha1: &[u8]) -> Result<Url, BackendError> {
+    let to_raw = to.ok_or(BackendError { response: "No URL specified".to_owned() })?;
+    let to = Url::parse(&to_raw).expect("Invalid URL");
+    let to = to.join(bucket).expect("Invalid bucket");
+    let sha1_str = sha1_to_string(sha1);
+    let to = to.join(&sha1_str).expect("Invalid checksum");
+
+    Ok(to)
+}
+
+fn sha1_to_string(sha1: &[u8]) -> String {
+    let mut sha_string = String::with_capacity(sha1.len());
+    for b in sha1 {
+        let s = format!("{:x}", b);
+        sha_string.push_str(&s);
+    }
+    sha_string
 }
