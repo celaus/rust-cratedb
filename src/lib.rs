@@ -27,15 +27,9 @@ pub mod dbcluster;
 pub mod sql;
 mod rowiterator;
 mod backend;
+mod common;
 
-// use self::serde_json::Value;
-// use self::serde::ser::Serialize;
-// use self::hyper::Url;
-// use error::{CrateDBError, CrateDBConfigurationError};
-// use rowiterator::RowIterator;
-// use std::collections::HashMap;
-// use std::convert::Into;
-// use self::rand::random;
+
 use dbcluster::DBCluster;
 use backend::DefaultHTTPBackend;
 
@@ -46,22 +40,33 @@ mod tests {
     use dbcluster::Nothing;
     use backend::Backend;
     use sql::QueryRunner;
+    use blob::{BlobContainer, BlobRef};
     use super::error::{BackendError, CrateDBError};
     use super::DBCluster;
     use super::row::{Row, ByIndex};
-    use std::io::Read;
+    use std::io::{Read, Cursor};
+    use common::sha1_digest;
 
     struct MockBackend {
         failing: bool,
         response: String,
+        blobs: Vec<MockBlob>,
+    }
+
+    #[derive(PartialEq, Clone)]
+    struct MockBlob {
+        contents: Vec<u8>,
+        sha1: Vec<u8>,
+        bucket: String,
     }
 
 
     impl MockBackend {
-        pub fn new(response: String, failing: bool) -> MockBackend {
+        pub fn new(response: String, failing: bool, blobs: Vec<MockBlob>) -> MockBackend {
             MockBackend {
                 failing: failing,
                 response: response,
+                blobs: blobs,
             }
         }
     }
@@ -82,7 +87,22 @@ mod tests {
                        sha1: &[u8],
                        f: &mut Read)
                        -> Result<(), BackendError> {
-            Ok(())
+            if !self.failing {
+                let mut buffer = Vec::new();
+                let _ = f.read_to_end(&mut buffer);
+                let sha1_v = sha1.to_vec();
+
+                let blob_pos =
+                    self.blobs.binary_search_by(|e| e.sha1.cmp(&sha1_v)).expect("blob not found");
+                let blob = &self.blobs[blob_pos];
+                assert_eq!(blob.sha1, sha1_v);
+                assert_eq!(blob.bucket, bucket);
+                assert_eq!(blob.contents, buffer);
+
+                Ok(())
+            } else {
+                Err(BackendError::new("Things failed"))
+            }
         }
 
         fn delete_blob(&self,
@@ -90,20 +110,51 @@ mod tests {
                        bucket: &str,
                        sha1: &[u8])
                        -> Result<(), BackendError> {
-            Ok(())
+            if !self.failing {
+                let sha1_v = sha1.to_vec();
+
+                let blob_pos =
+                    self.blobs.binary_search_by(|e| e.sha1.cmp(&sha1_v)).expect("blob not found");
+                let blob = &self.blobs[blob_pos];
+                assert_eq!(blob.sha1, sha1_v);
+                assert_eq!(blob.bucket, bucket);
+                Ok(())
+            } else {
+                Err(BackendError::new("Things failed"))
+            }
         }
+
         fn fetch_blob(&self,
                       to: Option<String>,
                       bucket: &str,
                       sha1: &[u8])
                       -> Result<Box<Read>, BackendError> {
-            Err(BackendError { response: "hello".to_string() })
+            if !self.failing {
+                let sha1_v = sha1.to_vec();
+
+                let blob_pos =
+                    self.blobs.binary_search_by(|e| e.sha1.cmp(&sha1_v)).expect("blob not found");
+                let blob = &self.blobs[blob_pos];
+                assert_eq!(blob.sha1, sha1_v);
+                assert_eq!(blob.bucket, bucket);
+
+                Ok(Box::new(Cursor::new(blob.contents.clone())))
+            } else {
+                Err(BackendError::new("Things failed"))
+            }
         }
     }
 
 
     fn new_cluster(response: &str, failing: bool) -> DBCluster<MockBackend> {
-        DBCluster::with_custom_backend(vec![], MockBackend::new(response.to_owned(), failing))
+        new_cluster_with_blobs(response, failing, vec![])
+    }
+    fn new_cluster_with_blobs(response: &str,
+                              failing: bool,
+                              blobs: Vec<MockBlob>)
+                              -> DBCluster<MockBackend> {
+        DBCluster::with_custom_backend(vec![],
+                                       MockBackend::new(response.to_owned(), failing, blobs))
     }
 
 
@@ -114,6 +165,70 @@ mod tests {
         c: f64,
     }
 
+
+    #[test]
+    fn blob_upload() {
+        let blob_a = vec![0x11, 0x12, 0x34, 0x53, 0x63, 0xAA, 0xFF];
+        let bucket = "bucket".to_string();
+        let expected_sha1 = sha1_digest(&mut Cursor::new(&blob_a)).unwrap();
+        let blobs = vec![MockBlob {
+                             sha1: expected_sha1.clone(),
+                             contents: blob_a.clone(),
+                             bucket: bucket.clone(),
+                         }];
+        let cluster = new_cluster_with_blobs("", false, blobs);
+
+        let result = cluster.put(bucket.clone(), &mut Cursor::new(&blob_a)).unwrap();
+
+        assert_eq!(result.sha1, expected_sha1);
+        assert_eq!(result.table, bucket);
+    }
+
+
+    #[test]
+    fn blob_download() {
+        let blob_a = vec![0x11, 0x12, 0x34, 0x53, 0x63, 0xAA, 0xFF];
+        let bucket = "bucket".to_string();
+        let expected_sha1 = sha1_digest(&mut Cursor::new(&blob_a)).unwrap();
+        let blobs = vec![MockBlob {
+                             sha1: expected_sha1.clone(),
+                             contents: blob_a.clone(),
+                             bucket: bucket.clone(),
+                         }];
+
+        let blobref = BlobRef {
+            sha1: expected_sha1.clone(),
+            table: bucket.clone(),
+        };
+
+        let cluster = new_cluster_with_blobs("", false, blobs);
+
+        let mut result = cluster.get(&blobref).unwrap();
+        let mut buffer: Vec<u8> = vec![];
+        let _ = result.read_to_end(&mut buffer);
+        assert_eq!(buffer, blob_a);
+    }
+
+    #[test]
+    fn blob_delete() {
+        let blob_a = vec![0x11, 0x12, 0x34, 0x53, 0x63, 0xAA, 0xFF];
+        let bucket = "bucket".to_string();
+        let expected_sha1 = sha1_digest(&mut Cursor::new(&blob_a)).unwrap();
+        let blobs = vec![MockBlob {
+                             sha1: expected_sha1.clone(),
+                             contents: blob_a.clone(),
+                             bucket: bucket.clone(),
+                         }];
+
+        let blobref = BlobRef {
+            sha1: expected_sha1.clone(),
+            table: bucket.clone(),
+        };
+
+        let cluster = new_cluster_with_blobs("", false, blobs);
+
+        assert!(cluster.delete(blobref).is_ok());
+    }
 
     #[test]
     fn parameter_query() {

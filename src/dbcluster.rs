@@ -24,9 +24,16 @@ use std::convert::Into;
 use self::rand::random;
 use backend::{Backend, DefaultHTTPBackend};
 
+///
+/// Empty struct to pass into argument lists for the Box to have a type.
+///
 #[derive(Serialize)]
 pub struct Nothing {}
 
+
+///
+/// Endpoint types to distinguish between URLs (/_sql vs /_blobs).
+///
 pub enum EndpointType {
     SQL,
     Blob,
@@ -46,16 +53,23 @@ pub struct DBCluster<T: Backend + Sized> {
 }
 
 
+///
+/// Trait to expose load balancing features of the driver to
+/// other components. Should return a URL for the backend to use.
+///
 pub trait Loadbalancing {
+    ///
+    /// Returns an endpoint for the provided URL type (BLOB or SQL).
+    ///
     fn get_endpoint(&self, endpoint_type: EndpointType) -> Option<String>;
 }
 
 impl<T: Backend + Sized> Loadbalancing for DBCluster<T> {
     // Chooses a new node using a random strategy
     fn get_endpoint(&self, endpoint_type: EndpointType) -> Option<String> {
-        if self.nodes.len() > 0 {
+        if !self.nodes.is_empty() {
             let node = random::<usize>() % self.nodes.len();
-            let host = self.nodes.get(node).unwrap().as_str();
+            let host = self.nodes[node].as_str();
             let t = match endpoint_type {
                 EndpointType::SQL => "_sql",
                 EndpointType::Blob => "_blobs",
@@ -79,7 +93,7 @@ impl<T: Backend + Sized> DBCluster<T> {
     /// use hyper::Url;
     /// let mut c: Cluster = Cluster::new(vec![Url::parse("http://localhost:4200")]);
     /// ```
-    pub fn new(nodes: Vec<Url>) -> Result<Cluster, CrateDBConfigurationError> {
+    pub fn new(nodes: Vec<Url>) -> Result<DBCluster<DefaultHTTPBackend>, CrateDBConfigurationError> {
         if nodes.len() < 1 {
             Err(CrateDBConfigurationError {
                 description: String::from("Please provide URLs to connect to"),
@@ -148,7 +162,7 @@ impl<T: Backend + Sized> DBCluster<T> {
         where S: Into<String>
     {
         let backend = DefaultHTTPBackend::new();
-        let nodes: Vec<Url> = node_str.into().split(",").map(|n| Url::parse(n).unwrap()).collect();
+        let nodes: Vec<Url> = node_str.into().split(',').map(|n| Url::parse(n).unwrap()).collect();
         if nodes.len() < 1 {
             Err(CrateDBConfigurationError {
                 description: String::from("Please provide URLs to connect to"),

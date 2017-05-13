@@ -94,24 +94,22 @@ impl<T: Backend + Sized> Executor for DBCluster<T> {
                 "bulk_args": serde_json::to_value(params.unwrap()).unwrap()
                 })
                 .to_string()
-        } else {
-            if let Some(p) = params {
-                json!({
+        } else if let Some(p) = params {
+            json!({
                     "stmt": sql.into(),
                     "args": serde_json::to_value(p).unwrap()
                     })
-                    .to_string()
-            } else {
-                json!({
+                .to_string()
+        } else {
+            json!({
                     "stmt": sql.into()
                     })
-                    .to_string()
-            }
+                .to_string()
         };
-        return match self.backend.execute(url, json_query) {
+        match self.backend.execute(url, json_query) {
             Ok(r) => r,
             Err(e) => e.response,
-        };
+        }
     }
 }
 
@@ -153,7 +151,7 @@ impl<T: Backend + Sized> QueryRunner for DBCluster<T> {
 
             };
         }
-        return Err(CrateDBError::new(format!("{}: {}", "Invalid JSON was returned", body), "500"));
+        Err(CrateDBError::new(format!("{}: {}", "Invalid JSON was returned", body), "500"))
     }
 
 
@@ -180,6 +178,6 @@ impl<T: Backend + Sized> QueryRunner for DBCluster<T> {
                 None => Err(extract_error(&data)),
             };
         }
-        return Err(CrateDBError::new(format!("{}: {}", "Invalid JSON was returned", body), "500"));
+        Err(CrateDBError::new(format!("{}: {}", "Invalid JSON was returned", body), "500"))
     }
 }

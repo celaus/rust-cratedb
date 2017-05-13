@@ -26,6 +26,7 @@ use error::BackendError;
 use std::borrow::Cow;
 use std::convert::Into;
 use std::clone::Clone;
+use common::to_hex_string;
 
 
 enum UrlType {
@@ -179,17 +180,7 @@ fn make_blob_url(to: Option<String>, bucket: &str, sha1: &[u8]) -> Result<Url, B
     let to_raw = to.ok_or(BackendError { response: "No URL specified".to_owned() })?;
     let to = Url::parse(&to_raw).expect("Invalid URL");
     let to = to.join(bucket).expect("Invalid bucket");
-    let sha1_str = sha1_to_string(sha1);
+    let sha1_str = to_hex_string(sha1);
     let to = to.join(&sha1_str).expect("Invalid checksum");
-
     Ok(to)
-}
-
-fn sha1_to_string(sha1: &[u8]) -> String {
-    let mut sha_string = String::with_capacity(sha1.len());
-    for b in sha1 {
-        let s = format!("{:x}", b);
-        sha_string.push_str(&s);
-    }
-    sha_string
 }
