@@ -25,13 +25,6 @@ use self::rand::random;
 use backend::{Backend, DefaultHTTPBackend};
 
 ///
-/// Empty struct to pass into argument lists for the Box to have a type.
-///
-#[derive(Serialize)]
-pub struct Nothing {}
-
-
-///
 /// Endpoint types to distinguish between URLs (/_sql vs /_blobs).
 ///
 pub enum EndpointType {
@@ -91,9 +84,9 @@ impl<T: Backend + Sized> DBCluster<T> {
     /// ```rust,ignore
     /// use cratedb::Cluster;
     /// use hyper::Url;
-    /// let mut c: Cluster = Cluster::new(vec![Url::parse("http://localhost:4200")]);
+    /// let mut c: Cluster = Cluster::nodes(vec![Url::parse("http://localhost:4200")]);2
     /// ```
-    pub fn new(nodes: Vec<Url>) -> Result<DBCluster<DefaultHTTPBackend>, CrateDBConfigurationError> {
+    pub fn nodes(nodes: Vec<Url>) -> Result<DBCluster<DefaultHTTPBackend>, CrateDBConfigurationError> {
         if nodes.len() < 1 {
             Err(CrateDBConfigurationError {
                 description: String::from("Please provide URLs to connect to"),

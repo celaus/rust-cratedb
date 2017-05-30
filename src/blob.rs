@@ -18,8 +18,9 @@ use dbcluster::DBCluster;
 use backend::Backend;
 use dbcluster::{Loadbalancing, EndpointType};
 use common::sha1_digest;
+use std::fmt::Debug;
 
-
+#[derive(Debug)]
 pub struct BlobRef {
     pub sha1: Vec<u8>,
     pub table: String,
@@ -30,7 +31,10 @@ pub trait BlobContainer {
     ///
     /// Uploads an existing blob to the cluster.
     ///
-    fn put<B: Read + Seek>(&self, table: String, blob: &mut B) -> Result<BlobRef, BlobError>;
+    fn put<TBL: Into<String>, B: Read + Seek>(&self,
+                                              table: TBL,
+                                              blob: &mut B)
+                                              -> Result<BlobRef, BlobError>;
 
 
     ///
@@ -47,15 +51,19 @@ pub trait BlobContainer {
 
 
 impl<T: Backend + Sized> BlobContainer for DBCluster<T> {
-    fn put<B: Read + Seek>(&self, table: String, blob: &mut B) -> Result<BlobRef, BlobError> {
+    fn put<TBL: Into<String>, B: Read + Seek>(&self,
+                                              table: TBL,
+                                              blob: &mut B)
+                                              -> Result<BlobRef, BlobError> {
         match sha1_digest(blob) {
             Ok(sha1) => {
                 let url = self.get_endpoint(EndpointType::Blob);
+                let table = table.into();
                 let _ = self.backend.upload_blob(url, &table, &sha1, blob);
                 Ok(BlobRef {
-                    table: table,
-                    sha1: sha1,
-                })
+                       table: table,
+                       sha1: sha1,
+                   })
             }
             Err(io) => Err(BlobError::Io(io)),
         }
@@ -64,12 +72,16 @@ impl<T: Backend + Sized> BlobContainer for DBCluster<T> {
 
     fn delete(&self, blob: BlobRef) -> Result<(), BlobError> {
         let url = self.get_endpoint(EndpointType::Blob);
-        self.backend.delete_blob(url, &blob.table, &blob.sha1).map_err(BlobError::Backend)
+        self.backend
+            .delete_blob(url, &blob.table, &blob.sha1)
+            .map_err(BlobError::Backend)
     }
 
 
     fn get(&self, blob: &BlobRef) -> Result<Box<Read>, BlobError> {
         let url = self.get_endpoint(EndpointType::Blob);
-        self.backend.fetch_blob(url, &blob.table, &blob.sha1).map_err(BlobError::Backend)
+        self.backend
+            .fetch_blob(url, &blob.table, &blob.sha1)
+            .map_err(BlobError::Backend)
     }
 }

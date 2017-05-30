@@ -19,7 +19,6 @@ extern crate serde_json;
 #[macro_use]
 extern crate serde_derive;
 
-
 pub mod error;
 pub mod row;
 pub mod blob;
@@ -34,10 +33,14 @@ use dbcluster::DBCluster;
 use backend::DefaultHTTPBackend;
 
 pub type Cluster = DBCluster<DefaultHTTPBackend>;
+pub type NoParams = sql::Nothing;
+
+#[deprecated(since="1.0.0", note="Please use `NoParams`")]
+pub type Nothing = NoParams;
 
 #[cfg(test)]
 mod tests {
-    use dbcluster::Nothing;
+    use super::Nothing;
     use backend::Backend;
     use sql::QueryRunner;
     use blob::{BlobContainer, BlobRef};
@@ -77,7 +80,7 @@ mod tests {
             if !self.failing {
                 return Ok(self.response.clone());
             } else {
-                return Err(BackendError { response: self.response.clone() });
+                return Err(BackendError::Custom { message: self.response.clone() });
             }
         }
 
@@ -92,8 +95,9 @@ mod tests {
                 let _ = f.read_to_end(&mut buffer);
                 let sha1_v = sha1.to_vec();
 
-                let blob_pos =
-                    self.blobs.binary_search_by(|e| e.sha1.cmp(&sha1_v)).expect("blob not found");
+                let blob_pos = self.blobs
+                    .binary_search_by(|e| e.sha1.cmp(&sha1_v))
+                    .expect("blob not found");
                 let blob = &self.blobs[blob_pos];
                 assert_eq!(blob.sha1, sha1_v);
                 assert_eq!(blob.bucket, bucket);
@@ -101,7 +105,7 @@ mod tests {
 
                 Ok(())
             } else {
-                Err(BackendError::new("Things failed"))
+                Err(BackendError::Custom { message: "Things failed".to_string() })
             }
         }
 
@@ -113,14 +117,15 @@ mod tests {
             if !self.failing {
                 let sha1_v = sha1.to_vec();
 
-                let blob_pos =
-                    self.blobs.binary_search_by(|e| e.sha1.cmp(&sha1_v)).expect("blob not found");
+                let blob_pos = self.blobs
+                    .binary_search_by(|e| e.sha1.cmp(&sha1_v))
+                    .expect("blob not found");
                 let blob = &self.blobs[blob_pos];
                 assert_eq!(blob.sha1, sha1_v);
                 assert_eq!(blob.bucket, bucket);
                 Ok(())
             } else {
-                Err(BackendError::new("Things failed"))
+                Err(BackendError::Custom { message: "Things failed".to_string() })
             }
         }
 
@@ -132,15 +137,16 @@ mod tests {
             if !self.failing {
                 let sha1_v = sha1.to_vec();
 
-                let blob_pos =
-                    self.blobs.binary_search_by(|e| e.sha1.cmp(&sha1_v)).expect("blob not found");
+                let blob_pos = self.blobs
+                    .binary_search_by(|e| e.sha1.cmp(&sha1_v))
+                    .expect("blob not found");
                 let blob = &self.blobs[blob_pos];
                 assert_eq!(blob.sha1, sha1_v);
                 assert_eq!(blob.bucket, bucket);
 
                 Ok(Box::new(Cursor::new(blob.contents.clone())))
             } else {
-                Err(BackendError::new("Things failed"))
+                Err(BackendError::Custom { message: "Things failed".to_string() })
             }
         }
     }
@@ -178,7 +184,9 @@ mod tests {
                          }];
         let cluster = new_cluster_with_blobs("", false, blobs);
 
-        let result = cluster.put(bucket.clone(), &mut Cursor::new(&blob_a)).unwrap();
+        let result = cluster
+            .put(bucket.clone(), &mut Cursor::new(&blob_a))
+            .unwrap();
 
         assert_eq!(result.sha1, expected_sha1);
         assert_eq!(result.table, bucket);
@@ -247,10 +255,10 @@ mod tests {
         let result = cluster.query("insert into mytable (v1, v2) values (?, ?)",
                                    Some(Box::new((1,
                                                   TestObj {
-                                       a: 1,
-                                       b: "asd".to_string(),
-                                       c: 3.14,
-                                   }))));
+                                                      a: 1,
+                                                      b: "asd".to_string(),
+                                                      c: 3.14,
+                                                  }))));
         assert!(result.is_ok());
         let (t, result) = result.unwrap();
         assert_eq!(t, 0.206f64);

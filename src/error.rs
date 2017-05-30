@@ -13,11 +13,16 @@
 // limitations under the License.
 
 
+extern crate hyper;
+
 use std::error::Error;
 use std::fmt::{self, Debug};
 use std::io;
+use std::cmp::PartialEq;
+use self::hyper::Error as TransportError;
 
-#[derive(Debug, PartialEq)]
+
+#[derive(Debug, PartialEq, Deserialize)]
 pub struct CrateDBError {
     message: String,
     code: String,
@@ -73,28 +78,10 @@ impl fmt::Display for CrateDBConfigurationError {
 
 
 #[derive(Debug)]
-pub struct BackendError {
-    pub response: String,
-}
-
-impl BackendError {
-    pub fn new<S>(response: S) -> BackendError
-        where S: Into<String>
-    {
-        BackendError { response: response.into() }
-    }
-}
-
-impl fmt::Display for BackendError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        Debug::fmt(&self.response, f)
-    }
-}
-
-impl Error for BackendError {
-    fn description(&self) -> &str {
-        &self.response
-    }
+pub enum BackendError {
+    Transport(TransportError),
+    Io(io::Error),
+    Custom { message: String },
 }
 
 #[derive(Debug)]

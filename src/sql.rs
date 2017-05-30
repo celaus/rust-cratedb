@@ -20,12 +20,18 @@ extern crate rand;
 use dbcluster::DBCluster;
 use self::serde_json::Value;
 use self::serde::ser::Serialize;
-use error::CrateDBError;
+use error::{CrateDBError, BackendError};
 use rowiterator::RowIterator;
 use std::collections::HashMap;
 use std::convert::Into;
 use backend::Backend;
 use dbcluster::{Loadbalancing, EndpointType};
+
+///
+/// Empty struct to pass into argument lists for the Box to have a type.
+///
+#[derive(Serialize)]
+pub struct Nothing {}
 
 
 trait Executor {
@@ -93,29 +99,38 @@ impl<T: Backend + Sized> Executor for DBCluster<T> {
                 "stmt": sql.into(),
                 "bulk_args": serde_json::to_value(params.unwrap()).unwrap()
                 })
-                .to_string()
+                    .to_string()
         } else if let Some(p) = params {
             json!({
                     "stmt": sql.into(),
                     "args": serde_json::to_value(p).unwrap()
                     })
-                .to_string()
+                    .to_string()
         } else {
             json!({
                     "stmt": sql.into()
                     })
-                .to_string()
+                    .to_string()
         };
         match self.backend.execute(url, json_query) {
             Ok(r) => r,
-            Err(e) => e.response,
+            Err(e) => {
+                match e {
+                    BackendError::Custom { message } => message,
+                    _ => format!("{:?}", e),
+                }
+            }
         }
     }
 }
 
 fn extract_error(data: &Value) -> CrateDBError {
     let message = data.pointer("/error/message").unwrap().as_str().unwrap();
-    let code = data.pointer("/error/code").unwrap().as_i64().unwrap().to_string();
+    let code = data.pointer("/error/code")
+        .unwrap()
+        .as_i64()
+        .unwrap()
+        .to_string();
     CrateDBError::new(message, code)
 }
 
@@ -133,23 +148,23 @@ impl<T: Backend + Sized> QueryRunner for DBCluster<T> {
 
             let data: Value = raw;
             return match data.pointer("/cols") {
-                Some(cols_raw) => {
-                    let rows = data.pointer("/rows").unwrap().as_array().unwrap();
-                    let cols_raw = cols_raw.as_array().unwrap();
-                    let mut cols = HashMap::with_capacity(cols_raw.len());
-                    for (i, c) in cols_raw.iter().enumerate() {
-                        let _ = match *c {
-                            Value::String(ref name) => cols.insert(name.to_owned(), i),
-                            _ => None,
-                        };
-                    }
+                       Some(cols_raw) => {
+                           let rows = data.pointer("/rows").unwrap().as_array().unwrap();
+                           let cols_raw = cols_raw.as_array().unwrap();
+                           let mut cols = HashMap::with_capacity(cols_raw.len());
+                           for (i, c) in cols_raw.iter().enumerate() {
+                               let _ = match *c {
+                                   Value::String(ref name) => cols.insert(name.to_owned(), i),
+                                   _ => None,
+                               };
+                           }
 
-                    let duration = data.pointer("/duration").unwrap().as_f64().unwrap();
-                    Ok((duration, RowIterator::new(rows.clone(), cols)))
-                }
-                None => Err(extract_error(&data)),
+                           let duration = data.pointer("/duration").unwrap().as_f64().unwrap();
+                           Ok((duration, RowIterator::new(rows.clone(), cols)))
+                       }
+                       None => Err(extract_error(&data)),
 
-            };
+                   };
         }
         Err(CrateDBError::new(format!("{}: {}", "Invalid JSON was returned", body), "500"))
     }
@@ -167,16 +182,17 @@ impl<T: Backend + Sized> QueryRunner for DBCluster<T> {
             let data: Value = raw;
 
             return match data.pointer("/cols") {
-                Some(_) => {
-                    let bulk_results = data.pointer("/results").unwrap().as_array().unwrap();
-                    let rowcounts = bulk_results.into_iter()
-                        .map(|v| v.pointer("/rowcount").unwrap().as_i64().unwrap())
-                        .collect();
-                    let duration = data.pointer("/duration").unwrap().as_f64().unwrap();
-                    Ok((duration, rowcounts))
-                }
-                None => Err(extract_error(&data)),
-            };
+                       Some(_) => {
+                           let bulk_results = data.pointer("/results").unwrap().as_array().unwrap();
+                           let rowcounts = bulk_results
+                               .into_iter()
+                               .map(|v| v.pointer("/rowcount").unwrap().as_i64().unwrap())
+                               .collect();
+                           let duration = data.pointer("/duration").unwrap().as_f64().unwrap();
+                           Ok((duration, rowcounts))
+                       }
+                       None => Err(extract_error(&data)),
+                   };
         }
         Err(CrateDBError::new(format!("{}: {}", "Invalid JSON was returned", body), "500"))
     }

@@ -16,13 +16,12 @@ extern crate ring;
 use self::ring::digest;
 use std::io::{Read, Seek, SeekFrom, Error};
 
-
 pub fn sha1_digest<B: Read + Seek>(input: &mut B) -> Result<Vec<u8>, Error> {
     let mut buffer = [0; 1024 * 100]; // 100 kb buffer size
     let mut ctx = digest::Context::new(&digest::SHA1);
     loop {
         match input.read(&mut buffer[..]) {
-            Ok(n) if n > 0 => ctx.update(&buffer),
+            Ok(n) if n > 0 => ctx.update(&buffer[0..n]),
             Err(e) => return Err(e),
             _ => break,
         };
@@ -43,25 +42,47 @@ pub fn sha1_digest<B: Read + Seek>(input: &mut B) -> Result<Vec<u8>, Error> {
 /// assert_eq!(to_hex_string(b"zzzzz"), "7A7A7A7A7A");
 /// ```
 pub fn to_hex_string(sha1: &[u8]) -> String {
-    let mut sha_string = String::with_capacity(sha1.len());
+    let mut sha_string = String::with_capacity(sha1.len() * 2);
     for b in sha1 {
-        let s = format!("{:x}", b);
+        let s = format!("{:02x}", b);
         sha_string.push_str(&s);
     }
+    assert_eq!(sha1.len() * 2, sha_string.len());
     sha_string
 }
 
 #[cfg(test)]
 mod tests {
-    use common::to_hex_string;
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn digest_string() {
+        let one234 = [113, 16, 237, 164, 208, 158, 6, 42, 165, 228, 163, 144, 176, 165, 114, 172,
+                      13, 44, 2, 32];
+        let contents = [74, 117, 108, 160, 126, 148, 135, 244, 130, 70, 90, 153, 232, 40, 106,
+                        188, 134, 186, 77, 199];
+        assert_eq!(sha1_digest(&mut Cursor::new(b"1234")).unwrap(), one234);
+        assert_eq!(sha1_digest(&mut Cursor::new(b"contents")).unwrap(),
+                   contents);
+
+    }
+
     #[test]
     fn string_from_hex() {
-        assert_eq!(to_hex_string(&[0xF]), "f");
-        assert_eq!(to_hex_string(&[11]), "b");
+        let sha_1234 = [113, 16, 237, 164, 208, 158, 6, 42, 165, 228, 163, 144, 176, 165, 114,
+                        172, 13, 44, 2, 32];
+        let sha_contents = [203, 2, 235, 164, 178, 218, 138, 242, 242, 203, 29, 167, 94, 67, 205,
+                            143, 13, 123, 69, 69];
+        assert_eq!(to_hex_string(&[0xF]), "0f");
+        assert_eq!(to_hex_string(&[11]), "0b");
         assert_eq!(to_hex_string(&[255]), "ff");
         assert_eq!(to_hex_string(b"11111"), "3131313131");
         assert_eq!(to_hex_string(b"aaad2"), "6161616432");
         assert_eq!(to_hex_string(b"zzzzz"), "7a7a7a7a7a");
         assert_eq!(to_hex_string(b""), "");
+        assert_eq!(to_hex_string(b""), "");
+        assert_eq!(to_hex_string(&sha_1234),
+                   "7110eda4d09e062aa5e4a390b0a572ac0d2c0220");
     }
 }
