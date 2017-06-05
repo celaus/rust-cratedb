@@ -37,6 +37,15 @@ enum UrlType {
     Plaintext,
 }
 
+impl Into<UrlType> for String {
+    fn into(self) -> UrlType {
+        match self.as_ref() {
+            _ => UrlType::Plaintext,
+            "https" => UrlType::Encryped,
+        }
+    }
+}
+
 pub type DefaultHTTPBackend = HTTPBackend<&'static str>;
 
 pub trait Backend {
@@ -84,11 +93,13 @@ impl<H: Into<Cow<'static, str>> + Clone> HTTPBackend<H> {
         }
     }
 
-    fn get_client(&self, u: UrlType) -> Client {
+    fn get_client<T>(&self, u: T) -> Client
+        where T: Into<UrlType>
+    {
         if self.use_proxy {
             Client::with_http_proxy(self.proxy_host.clone(), self.proxy_port)
         } else {
-            match u {
+            match u.into() {
                 UrlType::Encryped => Client::with_connector(HttpConnector {}),
                 UrlType::Plaintext => Client::with_connector(HttpsConnector::new(TlsClient::new())),
             }
@@ -111,6 +122,7 @@ impl<H: Into<Cow<'static, str>> + Clone> HTTPBackend<H> {
         }
     }
 }
+
 
 impl<H: Into<Cow<'static, str>> + Clone> Backend for HTTPBackend<H> {
     fn execute(&self, to: Option<String>, payload: String) -> Result<String, BackendError> {
@@ -148,16 +160,7 @@ impl<H: Into<Cow<'static, str>> + Clone> Backend for HTTPBackend<H> {
                    mut f: &mut Read)
                    -> Result<(), BackendError> {
         let to = make_blob_url(to, bucket, sha1).expect("Invalid blob url");
-        let client = self.get_client(match to.scheme() {
-                                         "http" => UrlType::Plaintext,
-                                         "https" => UrlType::Encryped,
-                                         _ => {
-                                             return Err(BackendError::Custom {
-                                                            message: "Unknown URL scheme"
-                                                                .to_string(),
-                                                        })
-                                         }
-                                     });
+        let client = self.get_client(to.scheme().to_string());
         let response = client.put(to).body(Body::ChunkedBody(&mut f)).send();
         self.parse_response(response)
     }
@@ -169,17 +172,7 @@ impl<H: Into<Cow<'static, str>> + Clone> Backend for HTTPBackend<H> {
                    sha1: &[u8])
                    -> Result<(), BackendError> {
         let to = make_blob_url(to, bucket, sha1).expect("Invalid blob url");
-        let client = self.get_client(match to.scheme() {
-                                         "http" => UrlType::Plaintext,
-                                         "https" => UrlType::Encryped,
-                                         _ => {
-                                             return Err(BackendError::Custom {
-                                                            message: "Unknown URL scheme"
-                                                                .to_string(),
-                                                        })
-                                         }
-                                     });
-
+        let client = self.get_client(to.scheme().to_string());
         let _ = try!(client.delete(to).send().map_err(BackendError::Transport));
 
         Ok(())
@@ -192,16 +185,7 @@ impl<H: Into<Cow<'static, str>> + Clone> Backend for HTTPBackend<H> {
                   -> Result<Box<Read>, BackendError> {
 
         let to = make_blob_url(to, bucket, sha1).expect("Invalid blob url");
-        let client = self.get_client(match to.scheme() {
-                                         "http" => UrlType::Plaintext,
-                                         "https" => UrlType::Encryped,
-                                         _ => {
-                                             return Err(BackendError::Custom {
-                                                            message: "Unknown URL scheme"
-                                                                .to_string(),
-                                                        })
-                                         }
-                                     });
+        let client = self.get_client(to.scheme().to_string());
 
         let response = try!(client.get(to).send().map_err(BackendError::Transport));
 
@@ -216,8 +200,10 @@ fn make_blob_url(to: Option<String>, bucket: &str, sha1: &[u8]) -> Result<Url, B
     let mut path = PathBuf::from(to.path());
     path.push(bucket);
     path.push(sha1_str);
-    Ok(to.join(path.to_str().expect("Invalid bytes in path"))
-           .expect("Could not create URL"))
+    let p = to.join(path.to_str().expect("Invalid bytes in path"))
+        .expect("Could not create URL");
+
+    Ok(p)
 }
 
 
@@ -226,6 +212,7 @@ mod tests {
     use error::BackendError;
     use super::*;
     use super::make_blob_url;
+
     #[test]
     fn valid_make_blob_url() {
         assert_eq!(make_blob_url(Some("https://my_url".to_string()), "a", b"1234").ok(),
@@ -241,8 +228,10 @@ mod tests {
 
     #[test]
     fn invalid_make_blob_url() {
-        // assert_eq!(make_blob_url(None, "a", b"1234"),
-        //            Err(BackendError::Custom { message: "No URL specified".to_string() }));
+        match make_blob_url(None, "a", b"1234").unwrap_err() {
+            BackendError::Custom { message } => assert_eq!(message, "No URL specified"), 
+            _ => panic!("nope"),
+        };
 
         assert_eq!(make_blob_url(Some("https://my_url".to_string()), "a", b"1234").ok(),
                    Some(Url::parse("https://my_url/a/31323334").unwrap()));
