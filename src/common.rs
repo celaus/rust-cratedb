@@ -13,8 +13,11 @@
 // limitations under the License.
 
 extern crate ring;
+extern crate hex;
+
 use self::ring::digest;
 use std::io::{Read, Seek, SeekFrom, Error};
+use self::hex::ToHex;
 
 pub fn sha1_digest<B: Read + Seek>(input: &mut B) -> Result<Vec<u8>, Error> {
     let mut buffer = [0; 1024 * 100]; // 100 kb buffer size
@@ -42,13 +45,7 @@ pub fn sha1_digest<B: Read + Seek>(input: &mut B) -> Result<Vec<u8>, Error> {
 /// assert_eq!(to_hex_string(b"zzzzz"), "7A7A7A7A7A");
 /// ```
 pub fn to_hex_string(sha1: &[u8]) -> String {
-    let mut sha_string = String::with_capacity(sha1.len() * 2);
-    for b in sha1 {
-        let s = format!("{:02x}", b);
-        sha_string.push_str(&s);
-    }
-    assert_eq!(sha1.len() * 2, sha_string.len());
-    sha_string
+    sha1.to_hex()
 }
 
 #[cfg(test)]

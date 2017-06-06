@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+extern crate hex;
+
 use std::io::{Read, Seek};
 use error::BlobError;
 use dbcluster::DBCluster;
@@ -19,17 +21,63 @@ use backend::Backend;
 use dbcluster::{Loadbalancing, EndpointType};
 use common::sha1_digest;
 use std::fmt::Debug;
+use sql::{QueryRunner, Nothing as NoParams};
+use row::ByIndex;
+use self::hex::{FromHex, ToHex};
 
-#[derive(Debug)]
+
+/// 
+/// A reference to a server-side blob. Basically contains the SHA1 hash and the table.
+///
+#[derive(Debug, Clone, PartialEq)]
 pub struct BlobRef {
+    /// SHA1 byte vector that identifies the blob on the server.
     pub sha1: Vec<u8>,
+
+    /// Table/bucket where the blob is located on the server.
     pub table: String,
 }
 
 
+///
+/// Trait for interfacing with CrateDB's BLOB features.
+///
 pub trait BlobContainer {
+
+
+    ///
+    /// Fetches a list of [BlobRefs] from the provided table.
+    /// 
+    /// # Errors
+    /// Errors occur when a cluster is unreachable, the table doesn't exist or other conditions appear: [Crate.io docs](https://crate.io/docs/reference/blob.html)
+    ///
+    /// # Examples
+    /// ```rust,ignore
+    /// use blob::BlobContainer;
+    /// let _ = c.query("create blob table my_blob_table", None::<Box<NoParams>>).unwrap();
+    /// for blob_ref in c.list("my_blob_table").unwrap() {
+    ///   println!("{:?}", blob_ref);   
+    /// }
+    /// ```
+    ///
+    fn list<TBL: Into<String>>(&self, table: TBL) -> Result<Vec<BlobRef>, BlobError>;
+
+
     ///
     /// Uploads an existing blob to the cluster.
+    /// 
+    /// # Errors
+    /// Errors occur when a cluster is unreachable, the blob already exists, or other conditions appear: [Crate.io docs](https://crate.io/docs/reference/blob.html)
+    ///
+    /// # Examples
+    /// ```rust,ignore
+    /// use sql::QueryRunner;
+    /// use blob::BlobContainer;
+    /// let _ = c.query("create blob table my_blob_table", None::<Box<NoParams>>).unwrap();
+    /// let myblob: Vec<u8> = iter::repeat(0xA).take(1024).collect();
+    /// let r = c.put("my_blob_table", &mut Cursor::new(&myblob)).unwrap();
+    /// println!("Uploaded BLOB: {:?}", r);
+    /// ```
     ///
     fn put<TBL: Into<String>, B: Read + Seek>(&self,
                                               table: TBL,
@@ -38,12 +86,30 @@ pub trait BlobContainer {
 
 
     ///
-    /// Deletes a blob on the cluster.
+    /// Deletes a blob on the cluster using a [BlobRef] obtained from uploading.
+    ///
+    /// # Errors
+    /// Errors occur when a cluster is unreachable, the blob already exists, or other conditions appear: [Crate.io docs](https://crate.io/docs/reference/blob.html)
+    ///
+    /// # Examples
+    /// ```rust,ignore
+    /// use blob::BlobContainer;
+    /// let _ = c.delete(my_blob_ref);
+    /// ```
     ///
     fn delete(&self, blob: BlobRef) -> Result<(), BlobError>;
 
     ///
     /// Fetches an existing blob from the cluster.
+    ///
+    /// # Errors
+    /// Errors occur when a cluster is unreachable, the blob already exists, or other conditions appear: [Crate.io docs](https://crate.io/docs/reference/blob.html)
+    ///
+    /// # Examples
+    /// ```rust,ignore
+    /// use blob::BlobContainer;
+    /// let _ = c.get(&my_blob_ref);
+    /// ```
     ///
     fn get(&self, blob: &BlobRef) -> Result<Box<Read>, BlobError>;
 }
@@ -83,5 +149,23 @@ impl<T: Backend + Sized> BlobContainer for DBCluster<T> {
         self.backend
             .fetch_blob(url, &blob.table, &blob.sha1)
             .map_err(BlobError::Backend)
+    }
+
+    fn list<TBL: Into<String>>(&self, table: TBL) -> Result<Vec<BlobRef>, BlobError> {
+        let table_name = table.into();
+        match  self.query(format!("select digest from blob.{}", table_name),  None::<Box<NoParams>>) {
+            Ok((_, rows)) => {
+                let mut blob_refs = Vec::with_capacity(rows.len());
+                for row in rows {
+                    if let Some(digest_str) = row.as_string(0) {
+                        if let Ok(digest) = Vec::from_hex(digest_str) {
+                            blob_refs.push(BlobRef{sha1: digest , table: table_name.clone() });
+                        }
+                    }
+                }
+                Ok(blob_refs)
+                },
+            Err(e) => Err(BlobError::Crate(e))
+        }
     }
 }

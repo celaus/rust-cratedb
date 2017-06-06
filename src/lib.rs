@@ -40,15 +40,17 @@ pub type Nothing = NoParams;
 
 #[cfg(test)]
 mod tests {
+    extern crate hex;
     use super::Nothing;
     use backend::Backend;
     use sql::QueryRunner;
     use blob::{BlobContainer, BlobRef};
-    use super::error::{BackendError, CrateDBError};
+    use super::error::{BackendError,BlobError, CrateDBError};
     use super::DBCluster;
     use super::row::{Row, ByIndex};
     use std::io::{Read, Cursor};
     use common::sha1_digest;
+    use self::hex::FromHex;
 
     struct MockBackend {
         failing: bool,
@@ -237,6 +239,38 @@ mod tests {
 
         assert!(cluster.delete(blobref).is_ok());
     }
+
+    #[test]
+    fn blob_list() {
+        let sha1= "4a756ca07e9487f482465a99e8286abc86ba4dc7";
+        let expected_sha1 = Vec::from_hex(sha1).unwrap();
+        let bucket = "bucket".to_string();
+        let blobref = BlobRef {
+            sha1: expected_sha1.clone(),
+            table: bucket.clone(),
+        };
+
+        let cluster = new_cluster_with_blobs(&format!("{{\"cols\":[\"digest\"],\"rows\":[[\"{}\"]],\"rowcount\":1,\"duration\":0.206}}", sha1), false, vec![]);
+        
+        let expected= vec![blobref.clone()];
+
+        assert_eq!(cluster.list(bucket).unwrap(), expected);
+    }
+        #[test]
+    fn error_blob_list() {
+        let bucket = "bucket".to_string();
+          let cluster = new_cluster_with_blobs(&format!("{{\"error\":{{\"message\":\"SQLActionException[TableUnknownException: Table 'blob.{}' unknown]\",\"code\":4041}}}}", bucket), false, vec![]);
+        let error = cluster.list(bucket.as_ref()).unwrap_err();
+        match error {
+            BlobError::Crate(crate_error) => {
+                        assert_eq!(crate_error.message, format!("SQLActionException[TableUnknownException: Table 'blob.{}' unknown]", bucket));
+                                assert_eq!(crate_error.code, "4041");
+
+            },
+            _=> panic!("Unexpected Error was returned")
+        }
+    }
+
 
     #[test]
     fn parameter_query() {

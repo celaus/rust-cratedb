@@ -24,9 +24,9 @@ use self::hyper::Error as TransportError;
 
 #[derive(Debug, PartialEq, Deserialize)]
 pub struct CrateDBError {
-    message: String,
-    code: String,
-    description: String,
+    pub message: String,
+    pub code: String,
+    pub description: String,
 }
 
 impl CrateDBError {

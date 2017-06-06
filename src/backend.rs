@@ -24,7 +24,6 @@ use self::hyper::client::response::Response;
 use self::hyper::status::StatusCode;
 
 use std::io::Read;
-use std::error::Error;
 use error::BackendError;
 use std::borrow::Cow;
 use std::convert::Into;
@@ -49,7 +48,22 @@ impl Into<UrlType> for String {
 pub type DefaultHTTPBackend = HTTPBackend<&'static str>;
 
 pub trait Backend {
+    ///
+    /// Executes a SQL command
+    ///
     fn execute(&self, to: Option<String>, payload: String) -> Result<String, BackendError>;
+
+    ///
+    /// Uploads a blob to the given URL, bucket, sha1.
+    ///
+    /// # Errors
+    /// For invalid URLs, errors while reading the Read object, or connection errors (depends on the implementation).
+    ///
+    /// # Examples
+    /// ```rust,ignore
+    /// backend.upload_blob(Some(url), "my_bucket", &blob.sha1, &mut my_file)
+    /// ```
+    ///
     fn upload_blob(&self,
                    to: Option<String>,
                    bucket: &str,
@@ -57,11 +71,35 @@ pub trait Backend {
                    f: &mut Read)
                    -> Result<(), BackendError>;
 
+    ///
+    /// Deletes a blob.
+    ///
+    /// # Errors
+    /// For invalid URLs or connection errors (depends on the implementation).
+    ///
+    /// # Examples
+    /// ```rust,ignore
+    /// backend.delete_blob(Some(url), "my_bucket", &blob.sha1)
+    /// ```
+    ///
     fn delete_blob(&self,
                    to: Option<String>,
                    bucket: &str,
                    sha1: &[u8])
                    -> Result<(), BackendError>;
+
+    ///
+    /// Retrieves a blob from the given URL, bucket, sha1.
+    ///
+    /// # Panics
+    /// # Errors
+    /// For invalid URLs or connection errors (depends on the implementation).
+    ///
+    /// # Examples
+    /// ```rust,ignore
+    /// backend.fetch_blob(Some(url), "my_bucket", &blob.sha1)
+    /// ```
+    ///
     fn fetch_blob(&self,
                   to: Option<String>,
                   bucket: &str,
@@ -70,40 +108,17 @@ pub trait Backend {
 }
 
 pub struct HTTPBackend<H: Into<Cow<'static, str>> + Clone> {
-    proxy_host: H,
-    proxy_port: u16,
-    use_proxy: bool,
+    client_factory: HTTPClientFactory<H>,
 }
 
 
 impl<H: Into<Cow<'static, str>> + Clone> HTTPBackend<H> {
     pub fn new() -> DefaultHTTPBackend {
-        HTTPBackend {
-            proxy_host: "",
-            proxy_port: 0,
-            use_proxy: false,
-        }
+        HTTPBackend { client_factory: HTTPClientFactory::<H>::new() }
     }
 
     pub fn with_proxy(host: H, port: u16) -> HTTPBackend<H> {
-        HTTPBackend {
-            proxy_host: host,
-            proxy_port: port,
-            use_proxy: true,
-        }
-    }
-
-    fn get_client<T>(&self, u: T) -> Client
-        where T: Into<UrlType>
-    {
-        if self.use_proxy {
-            Client::with_http_proxy(self.proxy_host.clone(), self.proxy_port)
-        } else {
-            match u.into() {
-                UrlType::Encryped => Client::with_connector(HttpConnector {}),
-                UrlType::Plaintext => Client::with_connector(HttpsConnector::new(TlsClient::new())),
-            }
-        }
+        HTTPBackend { client_factory: HTTPClientFactory::with_proxy(host, port) }
     }
 
     fn parse_response(&self, response: Result<Response, HyperError>) -> Result<(), BackendError> {
@@ -129,16 +144,16 @@ impl<H: Into<Cow<'static, str>> + Clone> Backend for HTTPBackend<H> {
 
         let to_raw = to.ok_or(BackendError::Custom { message: "No URL specified".to_owned() })?;
         let to = Url::parse(&to_raw).unwrap();
-        let client = self.get_client(match to.scheme() {
-                                         "http" => UrlType::Plaintext,
-                                         "https" => UrlType::Encryped,
-                                         _ => {
-                                             return Err(BackendError::Custom {
-                                                            message: "Unknown URL scheme"
-                                                                .to_string(),
-                                                        })
-                                         }
-                                     });
+        let client = self.client_factory
+            .client(match to.scheme() {
+                        "http" => UrlType::Plaintext,
+                        "https" => UrlType::Encryped,
+                        _ => {
+                            return Err(BackendError::Custom {
+                                           message: "Unknown URL scheme".to_string(),
+                                       })
+                        }
+                    });
 
         let mut response = try!(client
                                     .post(to)
@@ -160,7 +175,7 @@ impl<H: Into<Cow<'static, str>> + Clone> Backend for HTTPBackend<H> {
                    mut f: &mut Read)
                    -> Result<(), BackendError> {
         let to = make_blob_url(to, bucket, sha1).expect("Invalid blob url");
-        let client = self.get_client(to.scheme().to_string());
+        let client = self.client_factory.client(to.scheme().to_string());
         let response = client.put(to).body(Body::ChunkedBody(&mut f)).send();
         self.parse_response(response)
     }
@@ -172,8 +187,8 @@ impl<H: Into<Cow<'static, str>> + Clone> Backend for HTTPBackend<H> {
                    sha1: &[u8])
                    -> Result<(), BackendError> {
         let to = make_blob_url(to, bucket, sha1).expect("Invalid blob url");
-        let client = self.get_client(to.scheme().to_string());
-        let _ = try!(client.delete(to).send().map_err(BackendError::Transport));
+        let client = self.client_factory.client(to.scheme().to_string());
+        let _ = client.delete(to).send().map_err(BackendError::Transport)?;
 
         Ok(())
     }
@@ -185,9 +200,9 @@ impl<H: Into<Cow<'static, str>> + Clone> Backend for HTTPBackend<H> {
                   -> Result<Box<Read>, BackendError> {
 
         let to = make_blob_url(to, bucket, sha1).expect("Invalid blob url");
-        let client = self.get_client(to.scheme().to_string());
+        let client = self.client_factory.client(to.scheme().to_string());
 
-        let response = try!(client.get(to).send().map_err(BackendError::Transport));
+        let response = client.get(to).send().map_err(BackendError::Transport)?;
 
         Ok(Box::new(response))
     }
@@ -207,11 +222,59 @@ fn make_blob_url(to: Option<String>, bucket: &str, sha1: &[u8]) -> Result<Url, B
 }
 
 
+///
+/// Client factory for loosely coupling the backend's clients. Mainly for testability.
+///
+trait ClientFactory {
+    fn client<T>(&self, u: T) -> Client where T: Into<UrlType>;
+}
+
+struct HTTPClientFactory<H: Into<Cow<'static, str>> + Clone> {
+    use_proxy: bool,
+    proxy_host: H,
+    proxy_port: u16,
+}
+
+impl<H: Into<Cow<'static, str>> + Clone> HTTPClientFactory<H> {
+    pub fn new() -> HTTPClientFactory<&'static str> {
+        HTTPClientFactory {
+            proxy_host: "",
+            proxy_port: 0,
+            use_proxy: false,
+        }
+    }
+
+    pub fn with_proxy(host: H, port: u16) -> HTTPClientFactory<H> {
+        HTTPClientFactory {
+            proxy_host: host,
+            proxy_port: port,
+            use_proxy: true,
+        }
+    }
+}
+
+impl<H: Into<Cow<'static, str>> + Clone> ClientFactory for HTTPClientFactory<H> {
+    fn client<T>(&self, u: T) -> Client
+        where T: Into<UrlType>
+    {
+        if self.use_proxy {
+            Client::with_http_proxy(self.proxy_host.clone(), self.proxy_port)
+        } else {
+            match u.into() {
+                UrlType::Encryped => Client::with_connector(HttpConnector {}),
+                UrlType::Plaintext => Client::with_connector(HttpsConnector::new(TlsClient::new())),
+            }
+        }
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use error::BackendError;
     use super::*;
     use super::make_blob_url;
+
 
     #[test]
     fn valid_make_blob_url() {
