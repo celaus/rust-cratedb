@@ -20,9 +20,11 @@ use std::fmt::{self, Debug};
 use std::io;
 use std::cmp::PartialEq;
 use self::hyper::Error as TransportError;
+use self::hyper::error::ParseError as HyperParseError;
 
 
-#[derive(Debug, PartialEq, Deserialize)]
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct CrateDBError {
     pub message: String,
     pub code: String,
@@ -77,16 +79,43 @@ impl fmt::Display for CrateDBConfigurationError {
 }
 
 
-#[derive(Debug)]
-pub enum BackendError {
-    Transport(TransportError),
-    Io(io::Error),
-    Custom { message: String },
+#[derive(Debug, Clone, PartialEq)]
+pub struct BackendError {
+    pub description: String,
 }
 
-#[derive(Debug)]
+impl BackendError {
+    pub fn from_transport(error: TransportError) -> BackendError {
+        BackendError { description: format!("Error on Transport") }
+    }
+
+    pub fn from_parser(error: HyperParseError) -> BackendError {
+        BackendError { description: format!("Error on Parse") }
+    }
+
+    pub fn from_io(error: io::Error) -> BackendError {
+        BackendError { description: format!("Error on I/O") }
+    }
+
+    pub fn new(error: String) -> BackendError {
+        BackendError { description: error }
+    }
+}
+
+
+impl Error for BackendError {
+    fn description(&self) -> &str {
+        &self.description
+    }
+}
+
+impl fmt::Display for BackendError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        Debug::fmt(&self.description, f)
+    }
+}
+#[derive(Debug, Clone)]
 pub enum BlobError {
-    Crate(CrateDBError),
-    Io(io::Error),
-    Backend(BackendError),
+    Action(CrateDBError),
+    Transport(BackendError),
 }

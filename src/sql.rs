@@ -114,12 +114,7 @@ impl<T: Backend + Sized> Executor for DBCluster<T> {
         };
         match self.backend.execute(url, json_query) {
             Ok(r) => r,
-            Err(e) => {
-                match e {
-                    BackendError::Custom { message } => message,
-                    _ => format!("{:?}", e),
-                }
-            }
+            Err(e) => e.description,
         }
     }
 }

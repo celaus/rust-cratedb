@@ -45,17 +45,16 @@ mod tests {
     use backend::Backend;
     use sql::QueryRunner;
     use blob::{BlobContainer, BlobRef};
-    use super::error::{BackendError,BlobError, CrateDBError};
+    use super::error::{BackendError, BlobError, CrateDBError};
     use super::DBCluster;
     use super::row::{Row, ByIndex};
     use std::io::{Read, Cursor};
     use common::sha1_digest;
     use self::hex::FromHex;
+    use std::rc::Rc;
 
-    struct MockBackend {
-        failing: bool,
-        response: String,
-        blobs: Vec<MockBlob>,
+    struct FailingBackend {
+        failure: BackendError,
     }
 
     #[derive(PartialEq, Clone)]
@@ -66,24 +65,16 @@ mod tests {
     }
 
 
-    impl MockBackend {
-        pub fn new(response: String, failing: bool, blobs: Vec<MockBlob>) -> MockBackend {
-            MockBackend {
-                failing: failing,
-                response: response,
-                blobs: blobs,
-            }
+    impl FailingBackend {
+        pub fn new(error: BackendError) -> FailingBackend {
+            FailingBackend { failure: error }
         }
     }
 
-    impl Backend for MockBackend {
+
+    impl Backend for FailingBackend {
         fn execute(&self, to: Option<String>, payload: String) -> Result<String, BackendError> {
-            let _ = (to, payload);
-            if !self.failing {
-                return Ok(self.response.clone());
-            } else {
-                return Err(BackendError::Custom { message: self.response.clone() });
-            }
+            Err(self.failure.clone())
         }
 
         fn upload_blob(&self,
@@ -92,23 +83,7 @@ mod tests {
                        sha1: &[u8],
                        f: &mut Read)
                        -> Result<(), BackendError> {
-            if !self.failing {
-                let mut buffer = Vec::new();
-                let _ = f.read_to_end(&mut buffer);
-                let sha1_v = sha1.to_vec();
-
-                let blob_pos = self.blobs
-                    .binary_search_by(|e| e.sha1.cmp(&sha1_v))
-                    .expect("blob not found");
-                let blob = &self.blobs[blob_pos];
-                assert_eq!(blob.sha1, sha1_v);
-                assert_eq!(blob.bucket, bucket);
-                assert_eq!(blob.contents, buffer);
-
-                Ok(())
-            } else {
-                Err(BackendError::Custom { message: "Things failed".to_string() })
-            }
+            Err(self.failure.clone())
         }
 
         fn delete_blob(&self,
@@ -116,19 +91,7 @@ mod tests {
                        bucket: &str,
                        sha1: &[u8])
                        -> Result<(), BackendError> {
-            if !self.failing {
-                let sha1_v = sha1.to_vec();
-
-                let blob_pos = self.blobs
-                    .binary_search_by(|e| e.sha1.cmp(&sha1_v))
-                    .expect("blob not found");
-                let blob = &self.blobs[blob_pos];
-                assert_eq!(blob.sha1, sha1_v);
-                assert_eq!(blob.bucket, bucket);
-                Ok(())
-            } else {
-                Err(BackendError::Custom { message: "Things failed".to_string() })
-            }
+            Err(self.failure.clone())
         }
 
         fn fetch_blob(&self,
@@ -136,33 +99,97 @@ mod tests {
                       bucket: &str,
                       sha1: &[u8])
                       -> Result<Box<Read>, BackendError> {
-            if !self.failing {
-                let sha1_v = sha1.to_vec();
+            Err(self.failure.clone())
+        }
+    }
 
-                let blob_pos = self.blobs
-                    .binary_search_by(|e| e.sha1.cmp(&sha1_v))
-                    .expect("blob not found");
-                let blob = &self.blobs[blob_pos];
-                assert_eq!(blob.sha1, sha1_v);
-                assert_eq!(blob.bucket, bucket);
 
-                Ok(Box::new(Cursor::new(blob.contents.clone())))
-            } else {
-                Err(BackendError::Custom { message: "Things failed".to_string() })
+    struct MockBackend {
+        response: String,
+        blobs: Vec<MockBlob>,
+    }
+
+    impl MockBackend {
+        pub fn new(response: String, blobs: Vec<MockBlob>) -> MockBackend {
+            MockBackend {
+                response: response,
+                blobs: blobs,
             }
         }
     }
 
 
-    fn new_cluster(response: &str, failing: bool) -> DBCluster<MockBackend> {
-        new_cluster_with_blobs(response, failing, vec![])
+    impl Backend for MockBackend {
+        fn execute(&self, to: Option<String>, payload: String) -> Result<String, BackendError> {
+            let _ = (to, payload);
+            Ok(self.response.clone())
+        }
+
+        fn upload_blob(&self,
+                       to: Option<String>,
+                       bucket: &str,
+                       sha1: &[u8],
+                       f: &mut Read)
+                       -> Result<(), BackendError> {
+            let mut buffer = Vec::new();
+            let _ = f.read_to_end(&mut buffer);
+            let sha1_v = sha1.to_vec();
+
+            let blob_pos = self.blobs
+                .binary_search_by(|e| e.sha1.cmp(&sha1_v))
+                .expect("blob not found");
+            let blob = &self.blobs[blob_pos];
+            assert_eq!(blob.sha1, sha1_v);
+            assert_eq!(blob.bucket, bucket);
+            assert_eq!(blob.contents, buffer);
+            Ok(())
+        }
+
+        fn delete_blob(&self,
+                       to: Option<String>,
+                       bucket: &str,
+                       sha1: &[u8])
+                       -> Result<(), BackendError> {
+            let sha1_v = sha1.to_vec();
+
+            let blob_pos = self.blobs
+                .binary_search_by(|e| e.sha1.cmp(&sha1_v))
+                .expect("blob not found");
+            let blob = &self.blobs[blob_pos];
+            assert_eq!(blob.sha1, sha1_v);
+            assert_eq!(blob.bucket, bucket);
+            Ok(())
+        }
+
+        fn fetch_blob(&self,
+                      to: Option<String>,
+                      bucket: &str,
+                      sha1: &[u8])
+                      -> Result<Box<Read>, BackendError> {
+            let sha1_v = sha1.to_vec();
+
+            let blob_pos = self.blobs
+                .binary_search_by(|e| e.sha1.cmp(&sha1_v))
+                .expect("blob not found");
+            let blob = &self.blobs[blob_pos];
+            assert_eq!(blob.sha1, sha1_v);
+            assert_eq!(blob.bucket, bucket);
+
+            Ok(Box::new(Cursor::new(blob.contents.clone())))
+
+        }
     }
-    fn new_cluster_with_blobs(response: &str,
-                              failing: bool,
-                              blobs: Vec<MockBlob>)
-                              -> DBCluster<MockBackend> {
-        DBCluster::with_custom_backend(vec![],
-                                       MockBackend::new(response.to_owned(), failing, blobs))
+
+
+    fn new_cluster(response: &str) -> DBCluster<MockBackend> {
+        new_cluster_with_blobs(response, vec![])
+    }
+
+    fn new_cluster_with_blobs(response: &str, blobs: Vec<MockBlob>) -> DBCluster<MockBackend> {
+        DBCluster::with_custom_backend(vec![], MockBackend::new(response.to_owned(), blobs))
+    }
+    fn new_failing_cluster(error: BackendError) -> DBCluster<FailingBackend> {
+        DBCluster::with_custom_backend(vec![], FailingBackend::new(error))
     }
 
 
@@ -184,7 +211,7 @@ mod tests {
                              contents: blob_a.clone(),
                              bucket: bucket.clone(),
                          }];
-        let cluster = new_cluster_with_blobs("", false, blobs);
+        let cluster = new_cluster_with_blobs("", blobs);
 
         let result = cluster
             .put(bucket.clone(), &mut Cursor::new(&blob_a))
@@ -194,6 +221,31 @@ mod tests {
         assert_eq!(result.table, bucket);
     }
 
+    #[test]
+    fn error_blob_upload() {
+        let sha1 = "4a756ca07e9487f482465a99e8286abc86ba4dc7";
+        let expected_sha1 = Vec::from_hex(sha1).unwrap();
+        let bucket = "bucket".to_string();
+        let blobref = BlobRef {
+            sha1: expected_sha1.clone(),
+            table: bucket.clone(),
+        };
+
+        let cluster = new_cluster_with_blobs(&format!("{{\"error\":{{\"message\":\"SQLActionException[TableUnknownException: Table 'blob.{}' unknown]\",\"code\":4041}}}}",
+                                                     bucket),
+                                             vec![]);
+        let error = cluster.delete(blobref).unwrap_err();
+        match error {
+            BlobError::Action(crate_error) => {
+                assert_eq!(crate_error.message,
+                           format!("SQLActionException[TableUnknownException: Table 'blob.{}' unknown]",
+                                   bucket));
+                assert_eq!(crate_error.code, "4041");
+
+            }
+            _ => panic!("Unexpected Error was returned"),
+        }
+    }
 
     #[test]
     fn blob_download() {
@@ -211,12 +263,41 @@ mod tests {
             table: bucket.clone(),
         };
 
-        let cluster = new_cluster_with_blobs("", false, blobs);
-
+        let cluster = new_cluster_with_blobs("", blobs);
         let mut result = cluster.get(&blobref).unwrap();
         let mut buffer: Vec<u8> = vec![];
         let _ = result.read_to_end(&mut buffer);
         assert_eq!(buffer, blob_a);
+    }
+
+    #[test]
+    fn error_blob_download() {
+        let sha1 = "4a756ca07e9487f482465a99e8286abc86ba4dc7";
+        let expected_sha1 = Vec::from_hex(sha1).unwrap();
+        let bucket = "bucket".to_string();
+        let blobref = BlobRef {
+            sha1: expected_sha1.clone(),
+            table: bucket.clone(),
+        };
+
+        let cluster = new_failing_cluster(&format!("{{\"error\":{{\"message\":\"SQLActionException[TableUnknownException: Table 'blob.{}' unknown]\",\"code\":4041}}}}",
+                                                  bucket),
+                                          vec![]);
+        let error = cluster.get(&blobref).err();
+        if let Some(error) = error {
+            match error {
+                BlobError::Action(crate_error) => {
+                    assert_eq!(crate_error.message,
+                               format!("SQLActionException[TableUnknownException: Table 'blob.{}' unknown]",
+                                       bucket));
+                    assert_eq!(crate_error.code, "4041");
+
+                }
+                _ => panic!("Unexpected Error was returned"),
+            }
+        } else {
+            panic!("No error occured!")
+        }
     }
 
     #[test]
@@ -235,14 +316,14 @@ mod tests {
             table: bucket.clone(),
         };
 
-        let cluster = new_cluster_with_blobs("", false, blobs);
+        let cluster = new_cluster_with_blobs("", blobs);
 
         assert!(cluster.delete(blobref).is_ok());
     }
 
     #[test]
-    fn blob_list() {
-        let sha1= "4a756ca07e9487f482465a99e8286abc86ba4dc7";
+    fn error_blob_delete() {
+        let sha1 = "4a756ca07e9487f482465a99e8286abc86ba4dc7";
         let expected_sha1 = Vec::from_hex(sha1).unwrap();
         let bucket = "bucket".to_string();
         let blobref = BlobRef {
@@ -250,24 +331,56 @@ mod tests {
             table: bucket.clone(),
         };
 
-        let cluster = new_cluster_with_blobs(&format!("{{\"cols\":[\"digest\"],\"rows\":[[\"{}\"]],\"rowcount\":1,\"duration\":0.206}}", sha1), false, vec![]);
-        
-        let expected= vec![blobref.clone()];
+        let cluster = new_cluster_with_blobs(&format!("{{\"error\":{{\"message\":\"SQLActionException[TableUnknownException: Table 'blob.{}' unknown]\",\"code\":4041}}}}",
+                                                     bucket),
+                                             vec![]);
+        let error = cluster.delete(blobref).unwrap_err();
+        match error {
+            BlobError::Action(crate_error) => {
+                assert_eq!(crate_error.message,
+                           format!("SQLActionException[TableUnknownException: Table 'blob.{}' unknown]",
+                                   bucket));
+                assert_eq!(crate_error.code, "4041");
 
+            }
+            _ => panic!("Unexpected Error was returned"),
+        }
+    }
+
+    #[test]
+    fn blob_list() {
+        let sha1 = "4a756ca07e9487f482465a99e8286abc86ba4dc7";
+        let expected_sha1 = Vec::from_hex(sha1).unwrap();
+        let bucket = "bucket".to_string();
+        let blobref = BlobRef {
+            sha1: expected_sha1.clone(),
+            table: bucket.clone(),
+        };
+
+        let cluster = new_cluster_with_blobs(&format!("{{\"cols\":[\"digest\"],\"rows\":[[\"{}\"]],\"rowcount\":1,\"duration\":0.206}}",
+                                                     sha1),
+                                             vec![]);
+
+        let expected = vec![blobref.clone()];
         assert_eq!(cluster.list(bucket).unwrap(), expected);
     }
-        #[test]
+
+    #[test]
     fn error_blob_list() {
         let bucket = "bucket".to_string();
-          let cluster = new_cluster_with_blobs(&format!("{{\"error\":{{\"message\":\"SQLActionException[TableUnknownException: Table 'blob.{}' unknown]\",\"code\":4041}}}}", bucket), false, vec![]);
+        let cluster = new_cluster_with_blobs(&format!("{{\"error\":{{\"message\":\"SQLActionException[TableUnknownException: Table 'blob.{}' unknown]\",\"code\":4041}}}}",
+                                                     bucket),
+                                             vec![]);
         let error = cluster.list(bucket.as_ref()).unwrap_err();
         match error {
-            BlobError::Crate(crate_error) => {
-                        assert_eq!(crate_error.message, format!("SQLActionException[TableUnknownException: Table 'blob.{}' unknown]", bucket));
-                                assert_eq!(crate_error.code, "4041");
+            BlobError::Action(crate_error) => {
+                assert_eq!(crate_error.message,
+                           format!("SQLActionException[TableUnknownException: Table 'blob.{}' unknown]",
+                                   bucket));
+                assert_eq!(crate_error.code, "4041");
 
-            },
-            _=> panic!("Unexpected Error was returned")
+            }
+            _ => panic!("Unexpected Error was returned"),
         }
     }
 
@@ -275,8 +388,7 @@ mod tests {
     #[test]
     fn parameter_query() {
         let cluster = new_cluster("{\"cols\":[\"name\"],\"rows\":[[\"A\"]],\"rowcount\":1,\
-                                       \"duration\":0.206}",
-                                  false);
+                                       \"duration\":0.206}");
         let result = cluster.query("select name from mytable where a = ?",
                                    Some(Box::new("hello")));
         assert!(result.is_ok());
@@ -303,8 +415,7 @@ mod tests {
     #[test]
     fn no_parameter_query() {
         let cluster = new_cluster("{\"cols\":[\"name\"],\"rows\":[[\"A\"]],\"rowcount\":1,\
-                                       \"duration\":0.206}",
-                                  false);
+                                       \"duration\":0.206}");
         let result = cluster.query("select name from mytable where a = 'hello'",
                                    None::<Box<Nothing>>);
         assert!(result.is_ok());
@@ -322,8 +433,7 @@ mod tests {
         let cluster = new_cluster("{\"cols\": [], \"results\":[{\"rowcount\": 1}, \
                                        {\"rowcount\": 2}, {\"rowcount\": 3}],
                                        \
-                                       \"duration\":0.206}",
-                                  false);
+                                       \"duration\":0.206}");
         let result = cluster.bulk_query("update mytable set v = 1 where a = ?",
                                         Box::new(vec!["hello", "world", "lalala"]));
         assert!(result.is_ok());
@@ -338,8 +448,7 @@ mod tests {
     #[test]
     fn error_bulk_parameter_query() {
         let cluster = new_cluster("{\"error\":{\"message\":\"ReadOnlyException[Only read \
-                                       operations are allowed on this node]\",\"code\":5000}}",
-                                  true);
+                                       operations are allowed on this node]\",\"code\":5000}}");
         let result = cluster.bulk_query("select name from mytable where a = ?",
                                         Box::new(vec!["hello", "world", "lalala"]));
         assert!(result.is_err());
@@ -355,8 +464,7 @@ mod tests {
     #[test]
     fn error_parameter_query() {
         let cluster = new_cluster("{\"error\":{\"message\":\"ReadOnlyException[Only read \
-                                       operations are allowed on this node]\",\"code\":5000}}",
-                                  true);
+                                       operations are allowed on this node]\",\"code\":5000}}");
         let result = cluster.query("create table a(a string, b long)", None::<Box<Nothing>>);
         assert!(result.is_err());
         let e = result.err().unwrap();
@@ -368,7 +476,7 @@ mod tests {
 
     #[test]
     fn non_json_backend_error() {
-        let cluster = new_cluster("this is wrong my friend :{", true);
+        let cluster = new_cluster("this is wrong my friend :{");
 
 
         let result = cluster.query("select * from sys.nodes", None::<Box<Nothing>>);
