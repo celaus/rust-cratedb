@@ -47,6 +47,7 @@ impl Into<UrlType> for String {
 
 pub type DefaultHTTPBackend = HTTPBackend<&'static str>;
 
+#[derive(Clone)]
 pub enum BackendResult {
     NotFound,
     NotAuthorized,
