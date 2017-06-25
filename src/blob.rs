@@ -135,19 +135,19 @@ impl<T: Backend + Sized> BlobContainer for DBCluster<T> {
                                    })
                             }
                             BackendResult::NotFound => {
-                                Err(BlobError::Action(CrateDBError::new("Could not fetch BLOB. Not found.",
+                                Err(BlobError::Action(CrateDBError::new("Could not upload BLOB. Not found.",
                                                                         "404")))
                             }
                             BackendResult::NotAuthorized => {
-                                Err(BlobError::Action(CrateDBError::new("Could not fetch BLOB: Not authorized.",
+                                Err(BlobError::Action(CrateDBError::new("Could not upload BLOB: Not authorized.",
                                                                         "403")))
                             }
                             BackendResult::Timeout => {
-                                Err(BlobError::Action(CrateDBError::new("Could not fetch BLOB. Timed out.",
+                                Err(BlobError::Action(CrateDBError::new("Could not upload BLOB. Timed out.",
                                                                         "408")))
                             }
                             BackendResult::Error => {
-                                Err(BlobError::Action(CrateDBError::new("Could not fetch BLOB. Server error.",
+                                Err(BlobError::Action(CrateDBError::new("Could not upload BLOB. Server error.",
                                                                         "500")))
                             }
                         }
