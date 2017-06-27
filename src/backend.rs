@@ -60,7 +60,10 @@ pub trait Backend {
     ///
     /// Executes a SQL command
     ///
-    fn execute(&self, to: Option<String>, payload: String) -> Result<String, BackendError>;
+    fn execute(&self,
+               to: Option<String>,
+               payload: String)
+               -> Result<(BackendResult, String), BackendError>;
 
     ///
     /// Uploads a blob to the given URL, bucket, sha1.
@@ -133,7 +136,10 @@ impl<H: Into<Cow<'static, str>> + Clone> HTTPBackend<H> {
 
 
 impl<H: Into<Cow<'static, str>> + Clone> Backend for HTTPBackend<H> {
-    fn execute(&self, to: Option<String>, payload: String) -> Result<String, BackendError> {
+    fn execute(&self,
+               to: Option<String>,
+               payload: String)
+               -> Result<(BackendResult, String), BackendError> {
 
         let to_raw = to.ok_or(BackendError::new("No URL specified".to_owned()))?;
         let to = Url::parse(&to_raw).unwrap();

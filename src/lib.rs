@@ -73,7 +73,10 @@ mod tests {
 
 
     impl Backend for FailingBackend {
-        fn execute(&self, to: Option<String>, payload: String) -> Result<String, BackendError> {
+        fn execute(&self,
+                   to: Option<String>,
+                   payload: String)
+                   -> Result<(BackendResult, String), BackendError> {
             Err(self.failure.clone())
         }
 
@@ -122,7 +125,10 @@ mod tests {
 
 
     impl Backend for MockBackend {
-        fn execute(&self, to: Option<String>, payload: String) -> Result<String, BackendError> {
+        fn execute(&self,
+                   to: Option<String>,
+                   payload: String)
+                   -> Result<(BackendResult, String), BackendError> {
             let _ = (to, payload);
             Ok(self.response.clone())
         }

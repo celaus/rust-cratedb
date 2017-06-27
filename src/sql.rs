@@ -24,7 +24,7 @@ use error::{CrateDBError, BackendError};
 use rowiterator::RowIterator;
 use std::collections::HashMap;
 use std::convert::Into;
-use backend::Backend;
+use backend::{Backend, BackendResult};
 use dbcluster::{Loadbalancing, EndpointType};
 
 ///
@@ -35,7 +35,11 @@ pub struct Nothing {}
 
 
 trait Executor {
-    fn execute<SQL, S>(&self, sql: SQL, bulk: bool, params: Option<Box<S>>) -> String
+    fn execute<SQL, S>(&self,
+                       sql: SQL,
+                       bulk: bool,
+                       params: Option<Box<S>>)
+                       -> (BackendResult, String)
         where SQL: Into<String>,
               S: Serialize;
 }
@@ -89,7 +93,11 @@ pub trait QueryRunner {
 
 impl<T: Backend + Sized> Executor for DBCluster<T> {
     // Executes the query against the backend.
-    fn execute<SQL, S>(&self, sql: SQL, bulk: bool, params: Option<Box<S>>) -> String
+    fn execute<SQL, S>(&self,
+                       sql: SQL,
+                       bulk: bool,
+                       params: Option<Box<S>>)
+                       -> (BackendResult, String)
         where SQL: Into<String>,
               S: Serialize
     {
@@ -114,7 +122,7 @@ impl<T: Backend + Sized> Executor for DBCluster<T> {
         };
         match self.backend.execute(url, json_query) {
             Ok(r) => r,
-            Err(e) => e.description,
+            Err(e) => (BackendResult::Error, e.description),
         }
     }
 }
@@ -129,6 +137,8 @@ fn extract_error(data: &Value) -> CrateDBError {
     CrateDBError::new(message, code)
 }
 
+fn get_prop(name: &str, json: Value) ->
+
 impl<T: Backend + Sized> QueryRunner for DBCluster<T> {
     fn query<SQL, S>(&self,
                      sql: SQL,
@@ -137,31 +147,37 @@ impl<T: Backend + Sized> QueryRunner for DBCluster<T> {
         where SQL: Into<String>,
               S: Serialize
     {
-
-        let body = self.execute(sql, false, params);
+        let (result, body) = self.execute(sql, false, params);
         if let Ok(raw) = serde_json::from_str(&body) {
 
             let data: Value = raw;
-            return match data.pointer("/cols") {
-                       Some(cols_raw) => {
-                           let rows = data.pointer("/rows").unwrap().as_array().unwrap();
-                           let cols_raw = cols_raw.as_array().unwrap();
-                           let mut cols = HashMap::with_capacity(cols_raw.len());
-                           for (i, c) in cols_raw.iter().enumerate() {
-                               let _ = match *c {
-                                   Value::String(ref name) => cols.insert(name.to_owned(), i),
-                                   _ => None,
-                               };
-                           }
+            match result {
+                BackendResult::NotFound |
+                BackendResult::NotAuthorized |
+                BackendResult::Timeout |
+                BackendResult::Error => Err(extract_error(&data)),
+                BackendResult::Ok => {
+                    let cols = data.pointer("/cols").and_then(|v| v.as_array()).and_then(|cols_raw| {
+                        let mut cols = HashMap::with_capacity(cols_raw.len());
+                    for (i, c) in cols_raw.iter().enumerate() {
+                        let _ = match *c {
+                            Value::String(ref name) => cols.insert(name.to_owned(), i),
+                            _ => None,
+                        };
+                    }
+                    Ok(cols)
+                    });
+                    let rows = data.pointer("/rows").unwrap().as_array().unwrap();
+                    let cols_raw = cols_raw.as_array().unwrap();
+                    
 
-                           let duration = data.pointer("/duration").unwrap().as_f64().unwrap();
-                           Ok((duration, RowIterator::new(rows.clone(), cols)))
-                       }
-                       None => Err(extract_error(&data)),
-
-                   };
+                    let duration = data.pointer("/duration").unwrap().as_f64().unwrap();
+                    Ok((duration, RowIterator::new(rows.clone(), cols)))
+                }
+            };
+        } else {
+            Err(CrateDBError::new(format!("{}: {}", "Invalid JSON was returned", body), "500"))
         }
-        Err(CrateDBError::new(format!("{}: {}", "Invalid JSON was returned", body), "500"))
     }
 
 
