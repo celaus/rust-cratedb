@@ -130,7 +130,7 @@ mod tests {
                    payload: String)
                    -> Result<(BackendResult, String), BackendError> {
             let _ = (to, payload);
-            Ok(self.response.clone())
+            Ok((self.result.clone(), self.response.clone()))
         }
 
         fn upload_blob(&self,
@@ -498,7 +498,7 @@ mod tests {
         assert!(result.is_err());
         let e = result.err().unwrap();
         let expected = CrateDBError::new("Invalid JSON was returned: this is wrong my friend :{",
-                                         "500");
+                                         "200");
         assert_eq!(e, expected);
 
         // bulk queries:
@@ -506,7 +506,7 @@ mod tests {
         assert!(result.is_err());
         let e = result.err().unwrap();
         let expected = CrateDBError::new("Invalid JSON was returned: this is wrong my friend :{",
-                                         "500");
+                                         "200");
         assert_eq!(e, expected);
 
     }

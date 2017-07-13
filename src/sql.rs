@@ -20,7 +20,7 @@ extern crate rand;
 use dbcluster::DBCluster;
 use self::serde_json::Value;
 use self::serde::ser::Serialize;
-use error::{CrateDBError, BackendError};
+use error::CrateDBError;
 use rowiterator::RowIterator;
 use std::collections::HashMap;
 use std::convert::Into;
@@ -137,8 +137,6 @@ fn extract_error(data: &Value) -> CrateDBError {
     CrateDBError::new(message, code)
 }
 
-fn get_prop(name: &str, json: Value) ->
-
 impl<T: Backend + Sized> QueryRunner for DBCluster<T> {
     fn query<SQL, S>(&self,
                      sql: SQL,
@@ -157,26 +155,31 @@ impl<T: Backend + Sized> QueryRunner for DBCluster<T> {
                 BackendResult::Timeout |
                 BackendResult::Error => Err(extract_error(&data)),
                 BackendResult::Ok => {
-                    let cols = data.pointer("/cols").and_then(|v| v.as_array()).and_then(|cols_raw| {
+                    if let Some(cols) = data.pointer("/cols")
+                           .and_then(|v| v.as_array())
+                           .and_then(|cols_raw| {
                         let mut cols = HashMap::with_capacity(cols_raw.len());
-                    for (i, c) in cols_raw.iter().enumerate() {
-                        let _ = match *c {
-                            Value::String(ref name) => cols.insert(name.to_owned(), i),
-                            _ => None,
-                        };
-                    }
-                    Ok(cols)
-                    });
-                    let rows = data.pointer("/rows").unwrap().as_array().unwrap();
-                    let cols_raw = cols_raw.as_array().unwrap();
-                    
+                        for (i, c) in cols_raw.iter().enumerate() {
+                            let _ = match *c {
+                                Value::String(ref name) => cols.insert(name.to_owned(), i),
+                                _ => None,
+                            };
+                        }
+                        Some(cols)
+                    }) {
+                        let rows = data.pointer("/rows").unwrap().as_array().unwrap();
+                        //let cols_raw = cols_raw.as_array().unwrap();
 
-                    let duration = data.pointer("/duration").unwrap().as_f64().unwrap();
-                    Ok((duration, RowIterator::new(rows.clone(), cols)))
+                        let duration = data.pointer("/duration").unwrap().as_f64().unwrap();
+                        Ok((duration, RowIterator::new(rows.clone(), cols)))
+                    } else {
+                        Err(CrateDBError::new("Invalid JSON returned", "401"))
+                    }
                 }
-            };
+            }
         } else {
-            Err(CrateDBError::new(format!("{}: {}", "Invalid JSON was returned", body), "500"))
+            Err(CrateDBError::new(format!("{}: {}", "Invalid JSON was returned", body),
+                                  format!("{}", result as u8)))
         }
     }
 
@@ -187,7 +190,7 @@ impl<T: Backend + Sized> QueryRunner for DBCluster<T> {
               S: Serialize
     {
 
-        let body = self.execute(sql, true, Some(params));
+        let (result, body) = self.execute(sql, true, Some(params));
 
         if let Ok(raw) = serde_json::from_str(&body) {
             let data: Value = raw;
@@ -205,6 +208,7 @@ impl<T: Backend + Sized> QueryRunner for DBCluster<T> {
                        None => Err(extract_error(&data)),
                    };
         }
-        Err(CrateDBError::new(format!("{}: {}", "Invalid JSON was returned", body), "500"))
+        Err(CrateDBError::new(format!("{}: {}", "Invalid JSON was returned", body),
+                              format!("{}", result as u8)))
     }
 }

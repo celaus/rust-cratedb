@@ -17,10 +17,8 @@ extern crate hyper_rustls;
 
 use self::hyper::{Client, Url};
 use self::hyper::net::{HttpConnector, HttpsConnector};
-use self::hyper::error::Error as HyperError;
 use self::hyper_rustls::TlsClient;
 use self::hyper::client::Body;
-use self::hyper::client::response::Response;
 use self::hyper::status::StatusCode;
 
 use std::io::Read;
@@ -49,11 +47,11 @@ pub type DefaultHTTPBackend = HTTPBackend<&'static str>;
 
 #[derive(Clone)]
 pub enum BackendResult {
-    NotFound,
-    NotAuthorized,
-    Timeout,
-    Error,
-    Ok,
+    NotFound = 404,
+    NotAuthorized = 403,
+    Timeout = 504,
+    Error = 500,
+    Ok = 200,
 }
 
 pub trait Backend {
@@ -141,7 +139,7 @@ impl<H: Into<Cow<'static, str>> + Clone> Backend for HTTPBackend<H> {
                payload: String)
                -> Result<(BackendResult, String), BackendError> {
 
-        let to_raw = to.ok_or(BackendError::new("No URL specified".to_owned()))?;
+        let to_raw = to.ok_or_else(|| BackendError::new("No URL specified".to_owned()))?;
         let to = Url::parse(&to_raw).unwrap();
         let client = self.client_factory
             .client(match to.scheme() {
@@ -150,17 +148,19 @@ impl<H: Into<Cow<'static, str>> + Clone> Backend for HTTPBackend<H> {
                         _ => return Err(BackendError::new("Unknown URL scheme".to_string())),
                     });
 
-        let mut response = try!(client
-                                    .post(to)
-                                    .body(&payload)
-                                    .send()
-                                    .map_err(|e| BackendError::from_transport(e)));
+        let mut response = client
+            .post(to)
+            .body(&payload)
+            .send()
+            .map_err(BackendError::from_transport)?;
 
         let mut buf = String::new();
+
+        let status = parse_status(&response.status);
         response
             .read_to_string(&mut buf)
-            .map_err(|e| BackendError::from_io(e))?;
-        Ok(buf)
+            .map_err(BackendError::from_io)?;
+        Ok((status, buf))
     }
 
     fn upload_blob(&self,
@@ -176,7 +176,7 @@ impl<H: Into<Cow<'static, str>> + Clone> Backend for HTTPBackend<H> {
                 .body(Body::ChunkedBody(&mut f))
                 .send()
                 .map(|r| parse_status(&r.status))
-                .map_err(|e| BackendError::from_transport(e))
+                .map_err(BackendError::from_transport)
         } else {
             Err(BackendError::new("Invalid blob url".to_string()))
         }
@@ -194,7 +194,7 @@ impl<H: Into<Cow<'static, str>> + Clone> Backend for HTTPBackend<H> {
                 .delete(to)
                 .send()
                 .map(|r| parse_status(&r.status))
-                .map_err(|e| BackendError::from_transport(e))
+                .map_err(BackendError::from_transport)
         } else {
             Err(BackendError::new("Invalid blob url".to_string()))
         }
@@ -209,10 +209,7 @@ impl<H: Into<Cow<'static, str>> + Clone> Backend for HTTPBackend<H> {
         if let Ok(to) = make_blob_url(to, bucket, sha1) {
             let client = self.client_factory.client(to.scheme().to_string());
 
-            let response = client
-                .get(to)
-                .send()
-                .map_err(|e| BackendError::from_transport(e))?;
+            let response = client.get(to).send().map_err(BackendError::from_transport)?;
             Ok((parse_status(&response.status), Box::new(response)))
         } else {
             Err(BackendError::new("Invalid blob url".to_string()))
@@ -225,7 +222,7 @@ fn parse_status(code: &StatusCode) -> BackendResult {
     match *code {
         StatusCode::Ok | StatusCode::Created | StatusCode::Accepted => BackendResult::Ok, 
         StatusCode::BadRequest |
-        StatusCode::InternalServerError => BackendResult::Error,
+        //StatusCode::InternalServerError => BackendResult::Error,
         StatusCode::Unauthorized |
         StatusCode::Forbidden |
         StatusCode::MethodNotAllowed => BackendResult::NotAuthorized,
@@ -235,15 +232,14 @@ fn parse_status(code: &StatusCode) -> BackendResult {
 }
 
 fn make_blob_url(to: Option<String>, bucket: &str, sha1: &[u8]) -> Result<Url, BackendError> {
-    let to_raw = to.ok_or(BackendError::new("No URL specified".to_owned()))?;
+    let to_raw = to.ok_or_else(|| BackendError::new("No URL specified".to_owned()))?;
     if let Ok(to) = Url::parse(&to_raw) {
         let sha1_str = to_hex_string(sha1);
         let mut path = PathBuf::from(to.path());
         path.push(bucket);
         path.push(sha1_str);
         if let Some(url_remainder) = path.to_str() {
-            to.join(url_remainder)
-                .map_err(|e| BackendError::from_parser(e))
+            to.join(url_remainder).map_err(BackendError::from_parser)
         } else {
             Err(BackendError::new("Invalid bytes in path".to_string()))
         }

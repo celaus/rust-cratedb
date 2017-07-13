@@ -18,7 +18,6 @@ extern crate hyper;
 use std::error::Error;
 use std::fmt::{self, Debug};
 use std::io;
-use std::cmp::PartialEq;
 use self::hyper::Error as TransportError;
 use self::hyper::error::ParseError as HyperParseError;
 
@@ -86,15 +85,15 @@ pub struct BackendError {
 
 impl BackendError {
     pub fn from_transport(error: TransportError) -> BackendError {
-        BackendError { description: format!("Error on Transport") }
+        BackendError { description: format!("Error on Transport: {:?}", error) }
     }
 
     pub fn from_parser(error: HyperParseError) -> BackendError {
-        BackendError { description: format!("Error on Parse") }
+        BackendError { description: format!("Error on Parse: {:?}", error) }
     }
 
     pub fn from_io(error: io::Error) -> BackendError {
-        BackendError { description: format!("Error on I/O") }
+        BackendError { description: format!("Error on I/O: {:?}", error) }
     }
 
     pub fn new(error: String) -> BackendError {

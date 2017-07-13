@@ -62,19 +62,28 @@ fn main() {
     // drop this table
     let _  = c.query("drop table a", None::<Box<NoParams>>);
 
+        // create a blob table
     let _ = c.query("create blob table b", None::<Box<NoParams>>)
         .unwrap();
 
+    // create an arbitrary blob
     let myblob: Vec<u8> = iter::repeat(0xA).take(1024).collect();
+
+    // upload blob
     let r = c.put("b", &mut Cursor::new(&myblob)).unwrap();
+
     println!("Uploaded BLOB: {:?}", r);
 
+    // fetch blob
     let mut actual = c.get(&r).unwrap();
     let mut buffer: Vec<u8> = vec![];
     let _ = actual.read_to_end(&mut buffer);
-    assert_eq!(myblob, buffer);
-    let _ = c.delete(r);
 
+    // compare
+    assert_eq!(myblob, buffer);
+
+    // delete blob & clean up
+    let _ = c.delete(r);
     let _ = c.query("drop blob table b", None::<Box<NoParams>>).unwrap();
 }
 

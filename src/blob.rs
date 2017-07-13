@@ -20,7 +20,6 @@ use dbcluster::DBCluster;
 use backend::{Backend, BackendResult};
 use dbcluster::{Loadbalancing, EndpointType};
 use common::sha1_digest;
-use std::fmt::Debug;
 use sql::{QueryRunner, Nothing as NoParams};
 use row::ByIndex;
 use self::hex::FromHex;
