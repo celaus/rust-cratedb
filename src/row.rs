@@ -46,12 +46,12 @@ pub trait ByIndex {
 /// Get row values by their name.
 ///
 pub trait ByColumnName {
-    fn as_i64(&self, col: &String) -> Option<i64>;
-    fn as_u64(&self, col: &String) -> Option<u64>;
-    fn as_f64(&self, col: &String) -> Option<f64>;
-    fn as_bool(&self, col: &String) -> Option<bool>;
-    fn as_string(&self, col: &String) -> Option<String>;
-    fn as_array<T: DeserializeOwned>(&self, col: &String) -> Option<Vec<T>>;
+    fn as_i64(&self, col: &str) -> Option<i64>;
+    fn as_u64(&self, col: &str) -> Option<u64>;
+    fn as_f64(&self, col: &str) -> Option<f64>;
+    fn as_bool(&self, col: &str) -> Option<bool>;
+    fn as_string(&self, col: &str) -> Option<String>;
+    fn as_array<T: DeserializeOwned>(&self, col: &str) -> Option<Vec<T>>;
 }
 
 impl Row {
@@ -65,30 +65,30 @@ impl Row {
 
 impl ByIndex for Row {
     fn as_string(&self, idx: usize) -> Option<String> {
-        return match self.wrapped.get(idx).unwrap().as_str() {
+        match self.wrapped[idx].as_str() {
             Some(r) => Some(r.to_string()),
             _ => None,
-        };
+        }
     }
 
     fn as_i64(&self, idx: usize) -> Option<i64> {
-        return self.wrapped.get(idx).unwrap().as_i64();
+        self.wrapped[idx].as_i64()
     }
 
     fn as_u64(&self, idx: usize) -> Option<u64> {
-        return self.wrapped.get(idx).unwrap().as_u64();
+        self.wrapped[idx].as_u64()
     }
 
     fn as_f64(&self, idx: usize) -> Option<f64> {
-        return self.wrapped.get(idx).unwrap().as_f64();
+        self.wrapped[idx].as_f64()
     }
 
     fn as_bool(&self, idx: usize) -> Option<bool> {
-        return self.wrapped.get(idx).unwrap().as_bool();
+        self.wrapped[idx].as_bool()
     }
 
     fn as_array<T: DeserializeOwned>(&self, idx: usize) -> Option<Vec<T>> {
-        match self.wrapped.get(idx).unwrap().as_array() {
+        match self.wrapped[idx].as_array() {
             Some(v) => {
                 Some(v.into_iter().map(|e| serde_json::from_value(e.clone()).unwrap()).collect())
             }
@@ -99,46 +99,46 @@ impl ByIndex for Row {
 }
 
 impl ByColumnName for Row {
-    fn as_string(&self, col: &String) -> Option<String> {
-        return match self.columns.get(col) {
+    fn as_string(&self, col: &str) -> Option<String> {
+        match self.columns.get(col) {
             Some(idx) => ByIndex::as_string(self, *idx),
             None => None,
-        };
+        }
     }
 
-    fn as_i64(&self, col: &String) -> Option<i64> {
-        return match self.columns.get(col) {
+    fn as_i64(&self, col: &str) -> Option<i64> {
+        match self.columns.get(col) {
             Some(idx) => ByIndex::as_i64(self, *idx),
             None => None,
-        };
+        }
     }
 
-    fn as_u64(&self, col: &String) -> Option<u64> {
-        return match self.columns.get(col) {
+    fn as_u64(&self, col: &str) -> Option<u64> {
+        match self.columns.get(col) {
             Some(idx) => ByIndex::as_u64(self, *idx),
             None => None,
-        };
+        }
     }
 
-    fn as_f64(&self, col: &String) -> Option<f64> {
-        return match self.columns.get(col) {
+    fn as_f64(&self, col: &str) -> Option<f64> {
+        match self.columns.get(col) {
             Some(idx) => ByIndex::as_f64(self, *idx),
             None => None,
-        };
+        }
     }
 
-    fn as_bool(&self, col: &String) -> Option<bool> {
-        return match self.columns.get(col) {
+    fn as_bool(&self, col: &str) -> Option<bool> {
+        match self.columns.get(col) {
             Some(idx) => ByIndex::as_bool(self, *idx),
             None => None,
-        };
+        }
     }
 
-    fn as_array<T: DeserializeOwned>(&self, col: &String) -> Option<Vec<T>> {
-        return match self.columns.get(col) {
+    fn as_array<T: DeserializeOwned>(&self, col: &str) -> Option<Vec<T>> {
+        match self.columns.get(col) {
             Some(idx) => ByIndex::as_array(self, *idx),
             None => None,
-        };
+        }
     }
 }
 #[cfg(test)]
