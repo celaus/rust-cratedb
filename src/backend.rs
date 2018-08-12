@@ -17,6 +17,7 @@ extern crate hyper_rustls;
 
 use self::hyper::{Client, Url};
 use self::hyper::net::{HttpConnector, HttpsConnector};
+use self::hyper::header::{Headers, ContentType};
 use self::hyper_rustls::TlsClient;
 use self::hyper::client::Body;
 use self::hyper::status::StatusCode;
@@ -148,9 +149,12 @@ impl<H: Into<Cow<'static, str>> + Clone> Backend for HTTPBackend<H> {
                         _ => return Err(BackendError::new("Unknown URL scheme".to_string())),
                     });
 
+        let mut headers = Headers::new();
+        headers.set(ContentType::json());
         let mut response = client
             .post(to)
             .body(&payload)
+            .headers(headers)
             .send()
             .map_err(BackendError::from_transport)?;
 
