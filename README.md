@@ -7,10 +7,6 @@ CrateDB is a distributed SQL database by [Crate.io](https://crate.io), to which 
 
 ## Quick Start
 
-_The `None::<Box<NoParams>>` is required to tell the compiler about the type
-the box would actually have. NoParams is an empty struct_ 😁 _if there's a better
-solution, please open an issue_
-
 ```rust
 extern crate cratedb;
 
@@ -31,7 +27,7 @@ fn main() {
     // a simple query
     let stmt = "select hostname, name from sys.nodes";
     println!("Running: {}", stmt);
-    let (elapsed, rows) = c.query(stmt, None::<Box<NoParams>>).unwrap();
+    let (elapsed, rows) = c.query(stmt, NoParams).unwrap();
 
     for r in rows {
       // cast and retrieve the values
@@ -42,7 +38,7 @@ fn main() {
     println!("The query took {} ms", elapsed);
 
     // DDL statements
-    let (elapsed, rows) = c.query("create table a(a string)", None::<Box<NoParams>>).unwrap();
+    let (elapsed, rows) = c.query("create table a(a string)", NoParams).unwrap();
 
     // parameterized DML statements
     let p = Box::new(vec!(1234));
@@ -60,10 +56,10 @@ fn main() {
     println!("The query took {} ms", elapsed);
 
     // drop this table
-    let _  = c.query("drop table a", None::<Box<NoParams>>);
+    let _  = c.query("drop table a", NoParams);
 
         // create a blob table
-    let _ = c.query("create blob table b", None::<Box<NoParams>>)
+    let _ = c.query("create blob table b", NoParams)
         .unwrap();
 
     // create an arbitrary blob
@@ -84,7 +80,7 @@ fn main() {
 
     // delete blob & clean up
     let _ = c.delete(r);
-    let _ = c.query("drop blob table b", None::<Box<NoParams>>).unwrap();
+    let _ = c.query("drop blob table b", NoParams).unwrap();
 }
 
 ```

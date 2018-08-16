@@ -20,9 +20,10 @@ use dbcluster::DBCluster;
 use backend::{Backend, BackendResult};
 use dbcluster::{Loadbalancing, EndpointType};
 use common::sha1_digest;
-use sql::{QueryRunner, Nothing as NoParams};
+use sql::{QueryRunner};
 use row::ByIndex;
 use self::hex::FromHex;
+use NoParams;
 
 
 ///
@@ -51,7 +52,7 @@ pub trait BlobContainer {
     /// # Examples
     /// ```rust,ignore
     /// use blob::BlobContainer;
-    /// let _ = c.query("create blob table my_blob_table", None::<Box<NoParams>>).unwrap();
+    /// let _ = c.query("create blob table my_blob_table", NoParams).unwrap();
     /// for blob_ref in c.list("my_blob_table").unwrap() {
     ///   println!("{:?}", blob_ref);
     /// }
@@ -70,7 +71,7 @@ pub trait BlobContainer {
     /// ```rust,ignore
     /// use sql::QueryRunner;
     /// use blob::BlobContainer;
-    /// let _ = c.query("create blob table my_blob_table", None::<Box<NoParams>>).unwrap();
+    /// let _ = c.query("create blob table my_blob_table", NoParams).unwrap();
     /// let myblob: Vec<u8> = iter::repeat(0xA).take(1024).collect();
     /// let r = c.put("my_blob_table", &mut Cursor::new(&myblob)).unwrap();
     /// println!("Uploaded BLOB: {:?}", r);
@@ -224,7 +225,7 @@ impl<T: Backend + Sized> BlobContainer for DBCluster<T> {
     fn list<TBL: Into<String>>(&self, table: TBL) -> Result<Vec<BlobRef>, BlobError> {
         let table_name = table.into();
         match self.query(format!("select digest from blob.{}", table_name),
-                         None::<Box<NoParams>>) {
+                         NoParams) {
             Ok((_, rows)) => {
                 let mut blob_refs = Vec::with_capacity(rows.len());
                 for row in rows {
