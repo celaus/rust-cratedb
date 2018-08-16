@@ -33,15 +33,15 @@ use dbcluster::DBCluster;
 use backend::DefaultHTTPBackend;
 
 pub type Cluster = DBCluster<DefaultHTTPBackend>;
-pub type NoParams = sql::Nothing;
 
-#[deprecated(since="1.0.0", note="Please use `NoParams`")]
-pub type Nothing = NoParams;
+#[allow(non_upper_case_globals)]
+pub const NoParams: Option<Box<sql::Nothing>> = None;
+
 
 #[cfg(test)]
 mod tests {
     extern crate hex;
-    use super::Nothing;
+    use super::NoParams;
     use backend::{Backend, BackendResult};
     use sql::QueryRunner;
     use blob::{BlobContainer, BlobRef};
@@ -429,7 +429,7 @@ mod tests {
                                        \"duration\":0.206}",
                                   BackendResult::Ok);
         let result = cluster.query("select name from mytable where a = 'hello'",
-                                   None::<Box<Nothing>>);
+                                   NoParams);
         assert!(result.is_ok());
         let (t, result) = result.unwrap();
         assert_eq!(t, 0.206f64);
@@ -480,7 +480,7 @@ mod tests {
         let cluster = new_cluster("{\"error\":{\"message\":\"ReadOnlyException[Only read \
                                        operations are allowed on this node]\",\"code\":5000}}",
                                   BackendResult::Error);
-        let result = cluster.query("create table a(a string, b long)", None::<Box<Nothing>>);
+        let result = cluster.query("create table a(a string, b long)", NoParams);
         assert!(result.is_err());
         let e = result.err().unwrap();
         let expected = CrateDBError::new("ReadOnlyException[Only read operations are allowed on \
@@ -494,7 +494,7 @@ mod tests {
         let cluster = new_cluster("this is wrong my friend :{", BackendResult::Ok);
 
 
-        let result = cluster.query("select * from sys.nodes", None::<Box<Nothing>>);
+        let result = cluster.query("select * from sys.nodes", NoParams);
         assert!(result.is_err());
         let e = result.err().unwrap();
         let expected = CrateDBError::new("Invalid JSON was returned: this is wrong my friend :{",

@@ -56,7 +56,7 @@ pub trait QueryRunner {
     /// use cratedb::row::ByIndex;
     /// let node = "http://play.crate.io";
     /// let mut c: Cluster = Cluster::from_string(node).unwrap();
-    /// let (elapsed, rows) = c.query("select hostname from sys.nodes", None::<Box<Nothing>>).unwrap();
+    /// let (elapsed, rows) = c.query("select hostname from sys.nodes", ).unwrap();
     ///
     /// for r in rows {
     ///  println!("{}", r.as_string(0).unwrap());
